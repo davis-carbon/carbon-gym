@@ -11,6 +11,9 @@
  * Runs imports in dependency order to respect foreign keys.
  */
 
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+
 import { PrismaClient } from "../../generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
