@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
+import { ExerciseFormModal } from "@/components/admin/exercise-form-modal";
 import { Plus, Pencil, Archive, Video } from "lucide-react";
 
 interface ExerciseRow {
@@ -99,11 +100,13 @@ const columns: ColumnDef<ExerciseRow, unknown>[] = [
 ];
 
 export default function ExercisesPage() {
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Exercises</h1>
-        <Button>
+        <Button onClick={() => setShowCreateModal(true)}>
           <Plus className="h-4 w-4" /> Add New Exercise
         </Button>
       </div>
@@ -114,6 +117,11 @@ export default function ExercisesPage() {
           searchPlaceholder="Search exercises..."
         />
       </div>
+
+      <ExerciseFormModal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+      />
     </div>
   );
 }

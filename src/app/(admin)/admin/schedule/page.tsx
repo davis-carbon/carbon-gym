@@ -5,9 +5,11 @@ import { format, addDays, subDays } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Plus, Settings } from "lucide-react";
 import { DayCalendar } from "@/components/admin/schedule/day-calendar";
+import { BookAppointmentModal } from "@/components/admin/schedule/book-appointment-modal";
 
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [showBookModal, setShowBookModal] = useState(false);
 
   return (
     <div className="space-y-4">
@@ -36,7 +38,7 @@ export default function SchedulePage() {
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <Button size="sm">
+          <Button size="sm" onClick={() => setShowBookModal(true)}>
             <Plus className="h-4 w-4" /> Book Appointment
           </Button>
           <Button variant="ghost" size="sm">
@@ -47,6 +49,12 @@ export default function SchedulePage() {
 
       {/* Calendar */}
       <DayCalendar date={currentDate} />
+
+      <BookAppointmentModal
+        open={showBookModal}
+        onClose={() => setShowBookModal(false)}
+        defaultDate={currentDate.toISOString().split("T")[0]}
+      />
     </div>
   );
 }
