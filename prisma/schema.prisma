@@ -1,0 +1,1035 @@
+// Carbon Gym — Training Centre Management Platform
+// Replaces Exercise.com white-label at home.carbontc.co
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  ADMIN
+  TRAINER
+  STAFF
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  PENDING_CANCELLATION
+  SUSPENDED
+}
+
+enum LifecycleStage {
+  LEAD
+  PROSPECT
+  CLIENT
+  FORMER_CLIENT
+}
+
+enum BillingStatus {
+  PAID
+  NON_BILLED
+  BILLED
+  PAST_DUE
+  CANCELLED
+}
+
+enum PlanStatus {
+  DRAFT
+  PUBLISHED
+  ASSIGNED
+  ARCHIVED
+}
+
+enum ServiceType {
+  APPOINTMENT
+  CLASS
+}
+
+enum VisitStatus {
+  RESERVED
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  EARLY_CANCEL
+  NO_SHOW
+  LATE_CANCEL
+}
+
+enum PackageType {
+  SESSION_PACK
+  MEMBERSHIP
+  TRIAL
+  DROP_IN
+}
+
+enum PackageBillingCycle {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+  ONE_TIME
+}
+
+enum PaymentStatus {
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PENDING
+}
+
+enum MessageSenderType {
+  STAFF
+  CLIENT
+}
+
+enum AutomationTrigger {
+  DAYS_AFTER_PURCHASE
+  DAYS_AFTER_SIGNUP
+  DAYS_BEFORE_EXPIRY
+  ON_FIRST_LOGIN
+  MANUAL
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  PREFER_NOT_TO_SAY
+}
+
+enum DifficultyLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum ForceType {
+  PUSH
+  PULL
+  STATIC
+  DYNAMIC
+}
+
+enum MuscleGroup {
+  CHEST
+  BACK
+  SHOULDERS
+  BICEPS
+  TRICEPS
+  FOREARMS
+  QUADRICEPS
+  HAMSTRINGS
+  GLUTES
+  CALVES
+  CORE
+  ABS
+  OBLIQUES
+  FULL_BODY
+  CARDIO
+  OTHER
+}
+
+enum AssessmentFieldType {
+  TEXT
+  NUMBER
+  SELECT
+  MULTI_SELECT
+  DATE
+  BOOLEAN
+  SCALE
+  TEXTAREA
+  FILE
+}
+
+// ─────────────────────────────────────────────
+// ORGANIZATION
+// ─────────────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  logoUrl   String?
+  timezone  String   @default("America/Denver")
+  address   String?
+  city      String?
+  state     String?
+  zip       String?
+  phone     String?
+  email     String?
+  website   String?
+  bio       String?
+  autoReply String?
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff              StaffMember[]
+  clients            Client[]
+  tags               Tag[]
+  groups             Group[]
+  exercises          Exercise[]
+  workoutPlans       WorkoutPlan[]
+  locations          Location[]
+  serviceCategories  ServiceCategory[]
+  services           Service[]
+  packages           Package[]
+  appointments       Appointment[]
+  assessments        Assessment[]
+  resources          Resource[]
+  automations        Automation[]
+  auditLogs          AuditLog[]
+  messageThreads     MessageThread[]
+}
+
+// ─────────────────────────────────────────────
+// STAFF
+// ─────────────────────────────────────────────
+
+model StaffMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String   @unique // Supabase auth.users id
+  role           Role     @default(TRAINER)
+  firstName      String
+  lastName       String
+  email          String
+  phone          String?
+  bio            String?
+  avatarUrl      String?
+  color          String   @default("#6B7280") // Calendar display color
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization        Organization          @relation(fields: [organizationId], references: [id])
+  assignedClients     Client[]
+  createdExercises    Exercise[]
+  createdPlans        WorkoutPlan[]
+  planAssignments     PlanAssignment[]
+  appointments        Appointment[]
+  trainerNotes        TrainerNote[]
+  nutritionPlans      NutritionPlan[]
+  measurements        Measurement[]         @relation("MeasurementTakenBy")
+  createdAssessments  Assessment[]
+  createdResources    Resource[]
+  createdAutomations  Automation[]
+  availabilitySchedules AvailabilitySchedule[]
+  recurringMembers    RecurringMember[]
+
+  @@index([organizationId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────
+// CLIENTS
+// ─────────────────────────────────────────────
+
+model Client {
+  id               String          @id @default(cuid())
+  organizationId   String
+  userId           String?         @unique // Supabase auth.users id (nullable — not all clients have portal access)
+  firstName        String
+  lastName         String
+  email            String?
+  phone            String?
+  gender           Gender?
+  birthDate        DateTime?
+  address          String?
+  city             String?
+  state            String?
+  zip              String?
+  height           String?
+  weight           String?
+  profileImageUrl  String?
+  aboutMe          String?
+  signupDate       DateTime        @default(now())
+  status           ClientStatus    @default(ACTIVE)
+  lifecycleStage   LifecycleStage  @default(CLIENT)
+  billingStatus    BillingStatus   @default(NON_BILLED)
+  assignedStaffId  String?
+  stripeCustomerId String?
+  appPlatform      String?
+  customStatus     String?
+  customFields     Json            @default("{}")
+  deletedAt        DateTime?       // Soft delete
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  organization     Organization     @relation(fields: [organizationId], references: [id])
+  assignedStaff    StaffMember?     @relation(fields: [assignedStaffId], references: [id])
+  tags             ClientTag[]
+  groups           ClientGroup[]
+  clientPackages   ClientPackage[]
+  payments         Payment[]
+  measurements     Measurement[]
+  trainerNotes     TrainerNote[]
+  workoutLogs      WorkoutLog[]
+  nutritionPlans   NutritionPlan[]
+  nutritionLogs    NutritionLog[]
+  assessmentSubmissions AssessmentSubmission[]
+  resourceAssignments   ResourceAssignment[]
+  appointments     Appointment[]
+  planAssignments  PlanAssignment[]
+  recurringMembers RecurringMember[]
+  messageParticipants MessageParticipant[]
+  pushSubscriptions   ClientPushSubscription[]
+
+  @@index([organizationId])
+  @@index([assignedStaffId])
+  @@index([email])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model ClientPushSubscription {
+  id        String   @id @default(cuid())
+  clientId  String
+  endpoint  String
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([clientId, endpoint])
+}
+
+// ─────────────────────────────────────────────
+// TAGS & GROUPS
+// ─────────────────────────────────────────────
+
+model Tag {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  color          String   @default("#6B7280")
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  clients      ClientTag[]
+
+  @@unique([organizationId, name])
+}
+
+model ClientTag {
+  clientId String
+  tagId    String
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, tagId])
+}
+
+model Group {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  imageUrl       String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  members      ClientGroup[]
+
+  @@index([organizationId])
+}
+
+model ClientGroup {
+  clientId String
+  groupId  String
+  joinedAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  group  Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, groupId])
+}
+
+// ─────────────────────────────────────────────
+// EXERCISES
+// ─────────────────────────────────────────────
+
+model Exercise {
+  id               String          @id @default(cuid())
+  organizationId   String
+  name             String
+  description      String?
+  instructions     String?
+  muscleGroup      MuscleGroup?
+  secondaryMuscles MuscleGroup[]
+  difficultyLevel  DifficultyLevel?
+  forceType        ForceType?
+  equipment        String?
+  videoUrl         String?
+  thumbnailUrl     String?
+  isActive         Boolean         @default(true)
+  createdById      String?
+  tags             String[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+  createdBy       StaffMember?     @relation(fields: [createdById], references: [id])
+  routineExercises RoutineExercise[]
+  workoutLogExercises WorkoutLogExercise[]
+
+  @@index([organizationId])
+  @@index([muscleGroup])
+  @@index([isActive])
+}
+
+// ─────────────────────────────────────────────
+// WORKOUT PLANS & ROUTINES
+// ─────────────────────────────────────────────
+
+model WorkoutPlan {
+  id             String     @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  sizeWeeks      Int        @default(4)
+  status         PlanStatus @default(DRAFT)
+  planType       String?
+  createdById    String?
+  tags           String[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  createdBy    StaffMember?    @relation(fields: [createdById], references: [id])
+  routines     PlanRoutine[]
+  assignments  PlanAssignment[]
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+model PlanRoutine {
+  id         String   @id @default(cuid())
+  planId     String
+  dayNumber  Int
+  weekNumber Int      @default(1)
+  name       String?
+  notes      String?
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  plan      WorkoutPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  exercises RoutineExercise[]
+
+  @@index([planId])
+}
+
+model RoutineExercise {
+  id          String  @id @default(cuid())
+  routineId   String
+  exerciseId  String
+  sets        Int?
+  reps        String? // Can be "8-12" or "AMRAP"
+  weight      String? // Can be "135lbs" or "bodyweight"
+  restSeconds Int?
+  duration    String? // For timed exercises
+  tempo       String? // e.g., "3-1-2-0"
+  notes       String?
+  sortOrder   Int     @default(0)
+
+  routine  PlanRoutine @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  exercise Exercise    @relation(fields: [exerciseId], references: [id])
+
+  @@index([routineId])
+}
+
+model PlanAssignment {
+  id           String    @id @default(cuid())
+  planId       String
+  clientId     String
+  assignedById String?
+  startDate    DateTime?
+  endDate      DateTime?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+
+  plan       WorkoutPlan  @relation(fields: [planId], references: [id])
+  client     Client       @relation(fields: [clientId], references: [id])
+  assignedBy StaffMember? @relation(fields: [assignedById], references: [id])
+  workoutLogs WorkoutLog[]
+
+  @@index([clientId])
+  @@index([planId])
+}
+
+// ─────────────────────────────────────────────
+// WORKOUT LOGGING
+// ─────────────────────────────────────────────
+
+model WorkoutLog {
+  id               String   @id @default(cuid())
+  clientId         String
+  planAssignmentId String?
+  date             DateTime
+  durationMinutes  Int?
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  client         Client          @relation(fields: [clientId], references: [id])
+  planAssignment PlanAssignment? @relation(fields: [planAssignmentId], references: [id])
+  exercises      WorkoutLogExercise[]
+
+  @@index([clientId])
+  @@index([date])
+}
+
+model WorkoutLogExercise {
+  id           String @id @default(cuid())
+  workoutLogId String
+  exerciseId   String
+  sets         Json   // Array of { reps: number, weight: number, duration?: number, rpe?: number }
+  notes        String?
+
+  workoutLog WorkoutLog @relation(fields: [workoutLogId], references: [id], onDelete: Cascade)
+  exercise   Exercise   @relation(fields: [exerciseId], references: [id])
+
+  @@index([workoutLogId])
+}
+
+// ─────────────────────────────────────────────
+// SCHEDULING
+// ─────────────────────────────────────────────
+
+model Location {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  address        String?
+  city           String?
+  state          String?
+  zip            String?
+  phone          String?
+  timezone       String   @default("America/Denver")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization         Organization          @relation(fields: [organizationId], references: [id])
+  services             Service[]
+  appointments         Appointment[]
+  availabilitySchedules AvailabilitySchedule[]
+
+  @@index([organizationId])
+}
+
+model ServiceCategory {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  services     Service[]
+
+  @@index([organizationId])
+}
+
+model Service {
+  id              String      @id @default(cuid())
+  organizationId  String
+  name            String
+  description     String?
+  type            ServiceType @default(APPOINTMENT)
+  categoryId      String?
+  durationMinutes Int         @default(60)
+  maxParticipants Int?        // For classes
+  color           String      @default("#6B7280")
+  locationId      String?
+  requiresAsset   Boolean     @default(false)
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id])
+  category     ServiceCategory? @relation(fields: [categoryId], references: [id])
+  location     Location?        @relation(fields: [locationId], references: [id])
+  appointments Appointment[]
+  recurringMembers RecurringMember[]
+  availabilitySlots AvailabilitySlot[] @relation("SlotServices")
+
+  @@index([organizationId])
+  @@index([type])
+}
+
+model Package {
+  id             String             @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  packageType    PackageType        @default(SESSION_PACK)
+  billingCycle   PackageBillingCycle @default(MONTHLY)
+  price          Float
+  setupFee       Float              @default(0)
+  sessionCount   Int?               // For session packs
+  expiryDays     Int?               // Auto-expire after N days
+  autoRenew      Boolean            @default(false)
+  isActive       Boolean            @default(true)
+  stripePriceId  String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id])
+  clientPackages ClientPackage[]
+
+  @@index([organizationId])
+}
+
+model ClientPackage {
+  id                  String   @id @default(cuid())
+  clientId            String
+  packageId           String
+  startDate           DateTime
+  endDate             DateTime?
+  sessionsRemaining   Int?
+  sessionsUsed        Int      @default(0)
+  status              String   @default("active") // active, expired, cancelled, paused
+  stripeSubscriptionId String?
+  cancelledAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  client       Client       @relation(fields: [clientId], references: [id])
+  package      Package      @relation(fields: [packageId], references: [id])
+  appointments Appointment[]
+  payments     Payment[]
+
+  @@index([clientId])
+  @@index([packageId])
+  @@index([status])
+}
+
+model AvailabilitySchedule {
+  id         String   @id @default(cuid())
+  staffId    String
+  locationId String?
+  name       String   @default("Default")
+  isDefault  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  staff    StaffMember        @relation(fields: [staffId], references: [id])
+  location Location?          @relation(fields: [locationId], references: [id])
+  slots    AvailabilitySlot[]
+
+  @@index([staffId])
+}
+
+model AvailabilitySlot {
+  id         String    @id @default(cuid())
+  scheduleId String
+  dayOfWeek  DayOfWeek
+  startTime  String    // "09:00" (HH:mm)
+  endTime    String    // "17:00" (HH:mm)
+
+  schedule AvailabilitySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  services Service[]            @relation("SlotServices")
+
+  @@index([scheduleId])
+}
+
+model Appointment {
+  id               String      @id @default(cuid())
+  organizationId   String
+  clientId         String
+  staffId          String
+  serviceId        String
+  locationId       String?
+  clientPackageId  String?
+  scheduledAt      DateTime
+  endAt            DateTime
+  status           VisitStatus @default(RESERVED)
+  notes            String?
+  cancelledAt      DateTime?
+  cancelReason     String?
+  isRecurring      Boolean     @default(false)
+  recurringMemberId String?
+  bookedAt         DateTime    @default(now())
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+  client          Client           @relation(fields: [clientId], references: [id])
+  staff           StaffMember      @relation(fields: [staffId], references: [id])
+  service         Service          @relation(fields: [serviceId], references: [id])
+  location        Location?        @relation(fields: [locationId], references: [id])
+  clientPackage   ClientPackage?   @relation(fields: [clientPackageId], references: [id])
+  recurringMember RecurringMember? @relation(fields: [recurringMemberId], references: [id])
+
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([staffId])
+  @@index([scheduledAt])
+  @@index([status])
+}
+
+model RecurringMember {
+  id        String    @id @default(cuid())
+  clientId  String
+  serviceId String
+  staffId   String
+  startDate DateTime
+  endDate   DateTime?
+  dayOfWeek DayOfWeek
+  startTime String    // "09:00" (HH:mm)
+  frequency String    @default("weekly") // "weekly", "biweekly"
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  client       Client        @relation(fields: [clientId], references: [id])
+  service      Service       @relation(fields: [serviceId], references: [id])
+  staff        StaffMember   @relation(fields: [staffId], references: [id])
+  appointments Appointment[]
+
+  @@index([clientId])
+  @@index([staffId])
+}
+
+// ─────────────────────────────────────────────
+// PAYMENTS
+// ─────────────────────────────────────────────
+
+model Payment {
+  id                    String        @id @default(cuid())
+  clientId              String
+  clientPackageId       String?
+  amount                Float
+  currency              String        @default("usd")
+  status                PaymentStatus @default(PENDING)
+  stripePaymentIntentId String?
+  stripeInvoiceId       String?
+  description           String?
+  failureReason         String?
+  refundedAmount        Float         @default(0)
+  paidAt                DateTime?
+  createdAt             DateTime      @default(now())
+
+  client        Client         @relation(fields: [clientId], references: [id])
+  clientPackage ClientPackage? @relation(fields: [clientPackageId], references: [id])
+
+  @@index([clientId])
+  @@index([status])
+  @@index([paidAt])
+}
+
+// ─────────────────────────────────────────────
+// MEASUREMENTS & TRACKING
+// ─────────────────────────────────────────────
+
+model Measurement {
+  id             String    @id @default(cuid())
+  clientId       String
+  date           DateTime
+  weight         Float?
+  bodyFatPercent Float?
+  chest          Float?
+  waist          Float?
+  hips           Float?
+  leftArm        Float?
+  rightArm       Float?
+  leftThigh      Float?
+  rightThigh     Float?
+  neck           Float?
+  notes          String?
+  takenById      String?
+  createdAt      DateTime  @default(now())
+
+  client  Client       @relation(fields: [clientId], references: [id])
+  takenBy StaffMember? @relation("MeasurementTakenBy", fields: [takenById], references: [id])
+
+  @@index([clientId])
+  @@index([date])
+}
+
+model TrainerNote {
+  id        String   @id @default(cuid())
+  clientId  String
+  staffId   String
+  content   String
+  isPrivate Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client Client      @relation(fields: [clientId], references: [id])
+  staff  StaffMember @relation(fields: [staffId], references: [id])
+
+  @@index([clientId])
+}
+
+// ─────────────────────────────────────────────
+// NUTRITION
+// ─────────────────────────────────────────────
+
+model NutritionPlan {
+  id          String    @id @default(cuid())
+  clientId    String
+  createdById String?
+  name        String
+  description String?
+  startDate   DateTime?
+  endDate     DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  client    Client       @relation(fields: [clientId], references: [id])
+  createdBy StaffMember? @relation(fields: [createdById], references: [id])
+  meals     NutritionMeal[]
+
+  @@index([clientId])
+}
+
+model NutritionMeal {
+  id        String  @id @default(cuid())
+  planId    String
+  name      String  // "Breakfast", "Lunch", etc.
+  dayNumber Int     @default(1)
+  calories  Float?
+  protein   Float?
+  carbs     Float?
+  fat       Float?
+  notes     String?
+  sortOrder Int     @default(0)
+
+  plan NutritionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+}
+
+model NutritionLog {
+  id       String   @id @default(cuid())
+  clientId String
+  date     DateTime
+  mealName String?
+  description String?
+  calories Float?
+  protein  Float?
+  carbs    Float?
+  fat      Float?
+  notes    String?
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([date])
+}
+
+// ─────────────────────────────────────────────
+// ASSESSMENTS
+// ─────────────────────────────────────────────
+
+model Assessment {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  fields         Json     // Array of { name, label, type: AssessmentFieldType, options?, required? }
+  isActive       Boolean  @default(true)
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization          @relation(fields: [organizationId], references: [id])
+  createdBy    StaffMember?          @relation(fields: [createdById], references: [id])
+  submissions  AssessmentSubmission[]
+
+  @@index([organizationId])
+}
+
+model AssessmentSubmission {
+  id           String   @id @default(cuid())
+  assessmentId String
+  clientId     String
+  responses    Json     // Key-value pairs of field answers
+  completedAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id])
+  client     Client     @relation(fields: [clientId], references: [id])
+
+  @@index([assessmentId])
+  @@index([clientId])
+}
+
+// ─────────────────────────────────────────────
+// RESOURCES
+// ─────────────────────────────────────────────
+
+model Resource {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  fileUrl        String
+  fileType       String?
+  category       String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  createdBy    StaffMember?       @relation(fields: [createdById], references: [id])
+  assignments  ResourceAssignment[]
+
+  @@index([organizationId])
+}
+
+model ResourceAssignment {
+  id         String    @id @default(cuid())
+  resourceId String
+  clientId   String
+  assignedAt DateTime  @default(now())
+  viewedAt   DateTime?
+
+  resource Resource @relation(fields: [resourceId], references: [id])
+  client   Client   @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([resourceId])
+}
+
+// ─────────────────────────────────────────────
+// MESSAGING
+// ─────────────────────────────────────────────
+
+model MessageThread {
+  id             String   @id @default(cuid())
+  organizationId String
+  subject        String?
+  isGroup        Boolean  @default(false)
+  groupId        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization          @relation(fields: [organizationId], references: [id])
+  participants MessageParticipant[]
+  messages     Message[]
+
+  @@index([organizationId])
+}
+
+model MessageParticipant {
+  id         String            @id @default(cuid())
+  threadId   String
+  userId     String            // StaffMember.id or Client.id
+  userType   MessageSenderType
+  clientId   String?           // Populated if userType = CLIENT
+  lastReadAt DateTime?
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  client Client?       @relation(fields: [clientId], references: [id])
+
+  @@unique([threadId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id          String            @id @default(cuid())
+  threadId    String
+  senderId    String            // StaffMember.id or Client.id
+  senderType  MessageSenderType
+  body        String
+  scheduledAt DateTime?
+  sentAt      DateTime          @default(now())
+  createdAt   DateTime          @default(now())
+
+  thread      MessageThread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments MessageAttachment[]
+
+  @@index([threadId])
+  @@index([sentAt])
+}
+
+model MessageAttachment {
+  id        String @id @default(cuid())
+  messageId String
+  fileName  String
+  fileUrl   String
+  fileSize  Int?
+  mimeType  String?
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+// ─────────────────────────────────────────────
+// AUTOMATIONS
+// ─────────────────────────────────────────────
+
+model Automation {
+  id             String            @id @default(cuid())
+  organizationId String
+  name           String
+  isActive       Boolean           @default(true)
+  trigger        AutomationTrigger
+  triggerValue   Int?              // e.g., number of days
+  triggerProduct String?           // e.g., package name for purchase triggers
+  filterCriteria Json              @default("{}") // Who it applies to
+  actions        Json              // Array of { type, config } action definitions
+  createdById    String?
+  lastRunAt      DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdBy    StaffMember? @relation(fields: [createdById], references: [id])
+
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+// ─────────────────────────────────────────────
+// AUDIT LOG
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json     @default("{}")
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

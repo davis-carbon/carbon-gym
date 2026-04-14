@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  /* Warm neutral palette for gym/training aesthetic */
+  --color-carbon-50: #faf9f7;
+  --color-carbon-100: #f0ede8;
+  --color-carbon-200: #e0dbd2;
+  --color-carbon-300: #cbc3b5;
+  --color-carbon-400: #b3a896;
+  --color-carbon-500: #9d8f7b;
+  --color-carbon-600: #8a7d6b;
+  --color-carbon-700: #73685a;
+  --color-carbon-800: #60574c;
+  --color-carbon-900: #514a41;
+  --color-carbon-950: #2b2622;
+
+  /* Accent — warm orange for CTAs and highlights */
+  --color-accent-50: #fef3ee;
+  --color-accent-100: #fce4d7;
+  --color-accent-200: #f8c5ad;
+  --color-accent-300: #f39e79;
+  --color-accent-400: #ed6d43;
+  --color-accent-500: #e94d20;
+  --color-accent-600: #da3616;
+  --color-accent-700: #b52714;
+  --color-accent-800: #902118;
+  --color-accent-900: #741e16;
+  --color-accent-950: #3f0c09;
+
+  /* Surfaces — light theme */
+  --color-app-bg: #FAFAF9;
+  --color-surface-card: #FFFFFF;
+  --color-surface-raised: #F5F5F4;
+  --color-surface-sidebar: #1C1917;
+  --color-border-subtle: #E7E5E4;
+  --color-border-default: #D6D3D1;
+
+  /* Text */
+  --color-text-primary: #1C1917;
+  --color-text-secondary: #78716C;
+  --color-text-muted: #A8A29E;
+  --color-text-on-dark: #FAFAF9;
+}
+
+/* ── Responsive sidebar ────────────────────────── */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 40;
+}
+
+/* ── Animations ────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
