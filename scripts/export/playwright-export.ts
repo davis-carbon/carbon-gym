@@ -1,52 +1,23 @@
 /**
- * Playwright-based full data export from Exercise.com API.
+ * Playwright-based full data export from Exercise.com.
+ *
+ * Strategy: Intercept the SPA's own API responses as we navigate pages.
+ * The SPA has auth context (CSRF tokens, headers) that manual fetch lacks.
+ * We trigger navigation to each page and capture the API responses.
+ *
+ * For paginated data (clients, exercises), we navigate through all pages
+ * using URL parameters, capturing each API response.
  *
  * Usage: npx tsx scripts/export/playwright-export.ts
- *
- * This opens a Chromium browser with your saved Chrome profile.
- * On first run, log into home.carbontc.co manually.
- * Subsequent runs reuse the session automatically.
- *
- * Exports all data via the Exercise.com internal REST API (/api/v4/*)
- * and saves JSON files to data-export/.
- *
- * Available API endpoints discovered:
- *   /api/v4/clients     — 774 clients (with Stripe billing data in next_payment)
- *   /api/v4/exercises   — 795 exercises (with video URLs, muscle groups, etc.)
- *   /api/v4/groups      — 6 groups
- *   /api/v4/messages    — 471 messages
- *   /api/v4/conversations — 85 conversations
- *   /api/v4/trainers    — 9 trainers
- *   /api/v4/assessments — 25 assessments
- *   /api/v4/products    — 127 products/packages
- *   /api/v4/events      — 6061 events (appointments/visits/activity)
- *   /api/v4/resources   — 7 resources
- *   /api/v4/videos      — 5 videos
- *   /api/v4/reports     — 107 reports
  */
 
-import { chromium, type BrowserContext, type Page } from "playwright";
+import { chromium, type Page, type BrowserContext, type Response } from "playwright";
 import fs from "fs";
 import path from "path";
 
 const BASE_URL = "https://home.carbontc.co";
 const OUTPUT_DIR = path.resolve(__dirname, "../../data-export");
 const PROFILE_DIR = path.resolve(__dirname, "../../.playwright-profile");
-
-// All endpoints to export with their response key
-const ENDPOINTS = [
-  { path: "clients", key: "client", label: "Clients" },
-  { path: "exercises", key: "exercise", label: "Exercises" },
-  { path: "groups", key: "group", label: "Groups" },
-  { path: "messages", key: "message", label: "Messages" },
-  { path: "conversations", key: "conversation", label: "Conversations" },
-  { path: "trainers", key: "trainer", label: "Trainers" },
-  { path: "assessments", key: "assessment", label: "Assessments" },
-  { path: "products", key: "product", label: "Products/Packages" },
-  { path: "events", key: "event", label: "Events/Appointments" },
-  { path: "resources", key: "resource", label: "Resources" },
-  { path: "videos", key: "video", label: "Videos" },
-];
 
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -60,42 +31,86 @@ function writeJson(filename: string, data: unknown) {
   console.log(`  💾 ${filepath} (${size} KB)`);
 }
 
-async function fetchAllPages(page: Page, endpoint: string, key: string): Promise<unknown[]> {
+/**
+ * Navigate through paginated Exercise.com pages and capture API responses.
+ * The SPA makes its own API calls which we intercept.
+ */
+async function capturePages(
+  page: Page,
+  uiPath: string,
+  pageParam: string,
+  apiPattern: string,
+  responseKey: string,
+  totalPages: number
+): Promise<unknown[]> {
   const all: unknown[] = [];
-  let pageNum = 1;
-  let total = Infinity;
 
-  while (all.length < total) {
-    const url = `${BASE_URL}/api/v4/${endpoint}?page=${pageNum}&per_page=100`;
+  for (let p = 1; p <= totalPages; p++) {
+    const url = `${BASE_URL}${uiPath}?${pageParam}=${p}`;
 
-    const response = await page.evaluate(async (fetchUrl: string) => {
-      const r = await fetch(fetchUrl);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
-    }, url);
+    // Set up response listener before navigating
+    const apiPromise = page.waitForResponse(
+      (resp) => resp.url().includes(apiPattern) && resp.status() === 200,
+      { timeout: 15000 }
+    ).catch(() => null);
 
-    total = (response as any).meta?.total ?? 0;
-    const items = (response as any)[key] ?? [];
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
+    // Wait for API response or timeout
+    const apiResp = await apiPromise;
 
-    if (items.length === 0) break;
-    all.push(...items);
-    pageNum++;
+    if (apiResp) {
+      try {
+        const data = await apiResp.json();
+        const items = data[responseKey] || [];
+        all.push(...items);
+        process.stdout.write(`\r  📥 Page ${p}/${totalPages}: ${all.length} records`);
+      } catch {}
+    } else {
+      console.log(`\n  ⚠️ No API response on page ${p}, skipping`);
+    }
 
-    // Progress
-    process.stdout.write(`\r  📥 ${all.length}/${total}`);
+    // Small delay to avoid rate limiting
+    await page.waitForTimeout(800);
   }
 
-  console.log(`\r  ✅ ${all.length} records`);
+  console.log(`\r  ✅ ${all.length} records                    `);
   return all;
+}
+
+/**
+ * For endpoints without pagination UI, intercept all API calls on a single page.
+ */
+async function captureSinglePage(
+  page: Page,
+  uiPath: string,
+  apiPattern: string,
+  responseKey: string
+): Promise<unknown[]> {
+  const apiPromise = page.waitForResponse(
+    (resp) => resp.url().includes(apiPattern) && resp.status() === 200,
+    { timeout: 15000 }
+  ).catch(() => null);
+
+  await page.goto(`${BASE_URL}${uiPath}`, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
+  const apiResp = await apiPromise;
+
+  if (apiResp) {
+    try {
+      const data = await apiResp.json();
+      return data[responseKey] || [];
+    } catch {}
+  }
+
+  return [];
 }
 
 async function main() {
   console.log("🚀 Exercise.com Full Data Export via Playwright\n");
+  console.log("Strategy: Intercept SPA's own API responses\n");
   console.log("================================================\n");
 
   ensureDir(PROFILE_DIR);
 
-  // Launch browser with persistent context (reuses login)
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless: false,
     viewport: { width: 1200, height: 800 },
@@ -104,45 +119,99 @@ async function main() {
 
   const page = context.pages()[0] || (await context.newPage());
 
-  // Navigate to Exercise.com to ensure we're authenticated
+  // Authenticate
   console.log("🔐 Checking authentication...");
-  await page.goto(`${BASE_URL}/ex4/dashboard`, { waitUntil: "networkidle" });
+  await page.goto(`${BASE_URL}/ex4/dashboard`, { waitUntil: "domcontentloaded", timeout: 30000 });
 
-  // Check if we're on the login page
   const currentUrl = page.url();
   if (currentUrl.includes("login") || currentUrl.includes("sign_in")) {
-    console.log("\n⚠️  Not logged in! Please log in manually in the browser window.");
-    console.log("   Once logged in, the script will continue automatically.\n");
-
-    // Wait for navigation away from login page (up to 5 minutes)
+    console.log("\n⚠️  Log in manually in the browser window.");
+    console.log("   The script will continue after you log in.\n");
     await page.waitForURL("**/ex4/**", { timeout: 300_000 });
-    console.log("✅ Logged in!\n");
-  } else {
-    console.log("✅ Already authenticated\n");
   }
+  console.log("✅ Authenticated\n");
 
-  // Export each endpoint
-  for (const ep of ENDPOINTS) {
-    console.log(`\n📋 ${ep.label} (/api/v4/${ep.path})`);
-
-    try {
-      const data = await fetchAllPages(page, ep.path, ep.key);
-      writeJson(`${ep.path}.json`, data);
-    } catch (err: any) {
-      console.error(`  ❌ Failed: ${err.message}`);
+  // Also capture ALL API responses globally
+  const allApiResponses: Record<string, unknown[]> = {};
+  page.on("response", async (resp) => {
+    if (resp.url().includes("/api/v4/") && resp.status() === 200) {
+      try {
+        const ct = resp.headers()["content-type"] || "";
+        if (!ct.includes("json")) return;
+        const data = await resp.json();
+        const endpoint = resp.url().split("/api/v4/")[1]?.split("?")[0] || "";
+        if (!allApiResponses[endpoint]) allApiResponses[endpoint] = [];
+        // Store the raw response for later
+        if (data[endpoint] || data[endpoint.replace(/s$/, "")]) {
+          const key = data[endpoint] ? endpoint : endpoint.replace(/s$/, "");
+          const items = data[key] || [];
+          allApiResponses[endpoint].push(...items);
+        }
+      } catch {}
     }
-  }
+  });
 
-  // Summary
+  // ── 1. Clients (774, 39 pages) ────────────
+  console.log("📋 Clients (39 pages)...");
+  const clients = await capturePages(
+    page, "/ex4/clients", "client_page", "/api/v4/client", "client", 39
+  );
+  writeJson("clients-api.json", clients);
+
+  // ── 2. Exercises (795, 40 pages) ──────────
+  console.log("\n📋 Exercises (40 pages)...");
+  const exercises = await capturePages(
+    page, "/ex4/exercises", "exercise_page", "/api/v4/exercise", "exercise", 40
+  );
+  writeJson("exercises-api.json", exercises);
+
+  // ── 3. Groups ─────────────────────────────
+  console.log("\n📋 Groups...");
+  const groups = await captureSinglePage(page, "/ex4/groups", "/api/v4/group", "group");
+  writeJson("groups-api.json", groups);
+
+  // ── 4. Messages ───────────────────────────
+  console.log("\n📋 Messages...");
+  const messages = await captureSinglePage(page, "/ex4/messages", "/api/v4/message", "message");
+  // Messages page may load conversations instead
+  const conversations = await captureSinglePage(page, "/ex4/messages", "/api/v4/conversation", "conversation");
+  writeJson("messages-api.json", messages.length > 0 ? messages : conversations);
+
+  // ── 5. Navigate to a client profile to capture payments ──
+  console.log("\n📋 Client profiles (payment data)...");
+  // Navigate to first few clients to capture their subscription/billing data
+  // The client list API already includes payment info in next_payment field
+
+  // ── 6. Automations ────────────────────────
+  console.log("\n📋 Automations...");
+  await page.goto(`${BASE_URL}/ex4/embed/dashboard/automations/`, { waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(2000);
+  const automationText = await page.evaluate(() => document.body.innerText);
+  writeJson("automations-text.json", { rawText: automationText });
+
+  // ── 7. Services/Packages/Schedule ─────────
+  console.log("\n📋 Services...");
+  const services = await captureSinglePage(page, "/ex4/fbm/services", "/api/v4/service", "service");
+  writeJson("services-api.json", services);
+
+  console.log("\n📋 Visits...");
+  const visits = await captureSinglePage(page, "/ex4/fbm/visits", "/api/v4/visit", "visit");
+  writeJson("visits-api.json", visits);
+
+  // ── Summary ───────────────────────────────
   console.log("\n================================================");
-  console.log("✅ Export complete! Files saved to data-export/\n");
+  console.log("✅ Export complete!\n");
 
   const files = fs.readdirSync(OUTPUT_DIR).filter((f) => f.endsWith(".json"));
   for (const f of files) {
     const size = (fs.statSync(path.join(OUTPUT_DIR, f)).size / 1024).toFixed(1);
-    const data = JSON.parse(fs.readFileSync(path.join(OUTPUT_DIR, f), "utf-8"));
-    const count = Array.isArray(data) ? data.length : "?";
-    console.log(`  ${f}: ${count} records (${size} KB)`);
+    console.log(`  ${f} (${size} KB)`);
+  }
+
+  // Also dump any API responses we captured passively
+  console.log("\n📊 Passively captured API endpoints:");
+  for (const [ep, items] of Object.entries(allApiResponses)) {
+    console.log(`  /api/v4/${ep}: ${items.length} records`);
   }
 
   await context.close();
