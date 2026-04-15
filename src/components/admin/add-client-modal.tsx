@@ -5,6 +5,8 @@ import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { trpc } from "@/trpc/client";
+import { useToast } from "@/components/ui/toast";
 
 interface AddClientModalProps {
   open: boolean;
@@ -12,12 +14,27 @@ interface AddClientModalProps {
 }
 
 export function AddClientModal({ open, onClose }: AddClientModalProps) {
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
+
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
     email: "",
     phone: "",
-    lifecycleStage: "CLIENT",
+    lifecycleStage: "CLIENT" as "LEAD" | "PROSPECT" | "CLIENT" | "FORMER_CLIENT",
+  });
+
+  const createClient = trpc.clients.create.useMutation({
+    onSuccess: () => {
+      toast("success", "Client created");
+      utils.clients.list.invalidate();
+      onClose();
+      setForm({ firstName: "", lastName: "", email: "", phone: "", lifecycleStage: "CLIENT" });
+    },
+    onError: (err) => {
+      toast("error", err.message || "Failed to create client");
+    },
   });
 
   function handleChange(field: string, value: string) {
@@ -25,10 +42,13 @@ export function AddClientModal({ open, onClose }: AddClientModalProps) {
   }
 
   function handleSubmit() {
-    // TODO: call tRPC mutation once Supabase is connected
-    console.log("Creating client:", form);
-    onClose();
-    setForm({ firstName: "", lastName: "", email: "", phone: "", lifecycleStage: "CLIENT" });
+    createClient.mutate({
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email || undefined,
+      phone: form.phone || undefined,
+      lifecycleStage: form.lifecycleStage,
+    });
   }
 
   return (
@@ -43,9 +63,9 @@ export function AddClientModal({ open, onClose }: AddClientModalProps) {
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={!form.firstName || !form.lastName}
+            disabled={!form.firstName || !form.lastName || createClient.isPending}
           >
-            Create Client
+            {createClient.isPending ? "Creating..." : "Create Client"}
           </Button>
         </>
       }

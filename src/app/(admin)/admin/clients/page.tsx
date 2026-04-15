@@ -9,35 +9,20 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { AddClientModal } from "@/components/admin/add-client-modal";
-import { Plus, Mail, Archive } from "lucide-react";
-
-// Temporary mock data until Supabase is connected
-const MOCK_CLIENTS: ClientRow[] = [
-  { id: "1", firstName: "Tres", lastName: "Teschke", email: "tres.teschke@gmail.com", phone: "+1 214 453 9765", signupDate: "2019-07-24", status: "ACTIVE", billingStatus: "PAID", lifecycleStage: "CLIENT", assignedStaff: "Mada Hauck", profileImageUrl: null },
-  { id: "2", firstName: "Jaxon", lastName: "Honea", email: "jaxon@email.com", phone: "", signupDate: "2025-04-17", status: "ACTIVE", billingStatus: "PAID", lifecycleStage: "CLIENT", assignedStaff: "Mada Hauck", profileImageUrl: null },
-  { id: "3", firstName: "Jesse", lastName: "Weissburg", email: "j.weissburg@gmail.com", phone: "", signupDate: "2024-07-11", status: "PENDING_CANCELLATION", billingStatus: "BILLED", lifecycleStage: "CLIENT", assignedStaff: "Bri Larson", profileImageUrl: null },
-  { id: "4", firstName: "Shane", lastName: "Flores", email: "shane@email.com", phone: "", signupDate: "2024-09-15", status: "ACTIVE", billingStatus: "PAID", lifecycleStage: "CLIENT", assignedStaff: "Mada Hauck", profileImageUrl: null },
-  { id: "5", firstName: "Matthew", lastName: "Schweitzer", email: "matt@email.com", phone: "", signupDate: "2024-03-22", status: "ACTIVE", billingStatus: "PAID", lifecycleStage: "CLIENT", assignedStaff: "Aaron Davis", profileImageUrl: null },
-  { id: "6", firstName: "Miguel", lastName: "Garza", email: "miguel@email.com", phone: "", signupDate: "2024-11-01", status: "ACTIVE", billingStatus: "PAID", lifecycleStage: "CLIENT", assignedStaff: "Aaron Davis", profileImageUrl: null },
-  { id: "7", firstName: "Caroline", lastName: "Joyner", email: "caroline@email.com", phone: "", signupDate: "2025-01-14", status: "ACTIVE", billingStatus: "PAID", lifecycleStage: "CLIENT", assignedStaff: "Aaron Davis", profileImageUrl: null },
-  { id: "8", firstName: "JOHN Peter", lastName: "Leonard", email: "jpleonard2000@yahoo.com", phone: "", signupDate: "2026-04-13", status: "ACTIVE", billingStatus: "NON_BILLED", lifecycleStage: "CLIENT", assignedStaff: "CARBON Training Centre", profileImageUrl: null },
-  { id: "9", firstName: "Ruth", lastName: "ofondu", email: "ruginalegend@gmail.com", phone: "", signupDate: "2026-04-13", status: "ACTIVE", billingStatus: "NON_BILLED", lifecycleStage: "CLIENT", assignedStaff: "CARBON Training Centre", profileImageUrl: null },
-  { id: "10", firstName: "Ed", lastName: "Hockfield", email: "ed@email.com", phone: "", signupDate: "2024-06-10", status: "ACTIVE", billingStatus: "PAID", lifecycleStage: "CLIENT", assignedStaff: "Aaron Davis", profileImageUrl: null },
-  { id: "11", firstName: "Max", lastName: "Rice", email: "max@email.com", phone: "", signupDate: "2025-02-20", status: "ACTIVE", billingStatus: "PAID", lifecycleStage: "CLIENT", assignedStaff: "Aaron Davis", profileImageUrl: null },
-  { id: "12", firstName: "Brett", lastName: "Hart", email: "brett@email.com", phone: "", signupDate: "2024-08-05", status: "ACTIVE", billingStatus: "PAID", lifecycleStage: "CLIENT", assignedStaff: "Bri Larson", profileImageUrl: null },
-];
+import { trpc } from "@/trpc/client";
+import { Plus, Mail, Archive, Loader2 } from "lucide-react";
 
 interface ClientRow {
   id: string;
   firstName: string;
   lastName: string;
-  email: string;
-  phone: string;
-  signupDate: string;
+  email: string | null;
+  phone: string | null;
+  signupDate: Date;
   status: string;
   billingStatus: string;
   lifecycleStage: string;
-  assignedStaff: string;
+  assignedStaff: string | null;
   profileImageUrl: string | null;
 }
 
@@ -106,19 +91,16 @@ const columns: ColumnDef<ClientRow, unknown>[] = [
   {
     accessorKey: "assignedStaff",
     header: "Assigned To",
+    cell: ({ getValue }) => (getValue() as string) || "—",
   },
   {
     id: "actions",
     header: "",
     size: 48,
-    cell: ({ row }) => (
+    cell: () => (
       <DropdownMenu>
-        <DropdownItem onClick={() => {}}>
-          <Mail className="h-4 w-4" /> Message
-        </DropdownItem>
-        <DropdownItem onClick={() => {}} danger>
-          <Archive className="h-4 w-4" /> Archive
-        </DropdownItem>
+        <DropdownItem><Mail className="h-4 w-4" /> Message</DropdownItem>
+        <DropdownItem danger><Archive className="h-4 w-4" /> Archive</DropdownItem>
       </DropdownMenu>
     ),
     enableSorting: false,
@@ -128,6 +110,26 @@ const columns: ColumnDef<ClientRow, unknown>[] = [
 export default function ClientsPage() {
   const router = useRouter();
   const [showAddModal, setShowAddModal] = useState(false);
+
+  const { data, isLoading, error } = trpc.clients.list.useQuery({
+    limit: 100,
+  });
+
+  const clientRows: ClientRow[] = (data?.clients ?? []).map((c) => ({
+    id: c.id,
+    firstName: c.firstName,
+    lastName: c.lastName,
+    email: c.email,
+    phone: c.phone,
+    signupDate: c.signupDate,
+    status: c.status,
+    billingStatus: c.billingStatus,
+    lifecycleStage: c.lifecycleStage,
+    assignedStaff: c.assignedStaff
+      ? `${c.assignedStaff.firstName} ${c.assignedStaff.lastName}`
+      : null,
+    profileImageUrl: c.profileImageUrl,
+  }));
 
   return (
     <div>
@@ -139,12 +141,23 @@ export default function ClientsPage() {
       </div>
 
       <div className="rounded-xl border border-stone-200 bg-white p-6">
-        <DataTable
-          data={MOCK_CLIENTS}
-          columns={columns}
-          searchPlaceholder="Search clients..."
-          onRowClick={(row) => router.push(`/admin/clients/${row.id}`)}
-        />
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-stone-400" />
+            <span className="ml-2 text-sm text-stone-500">Loading clients...</span>
+          </div>
+        ) : error ? (
+          <div className="py-12 text-center text-sm text-red-600">
+            Failed to load clients. Make sure you&apos;re logged in.
+          </div>
+        ) : (
+          <DataTable
+            data={clientRows}
+            columns={columns}
+            searchPlaceholder="Search clients..."
+            onRowClick={(row) => router.push(`/admin/clients/${row.id}`)}
+          />
+        )}
       </div>
 
       <AddClientModal

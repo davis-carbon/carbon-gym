@@ -2,7 +2,7 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { ArrowLeft, Calendar as CalendarIcon, MoreVertical } from "lucide-react";
+import { ArrowLeft, Calendar as CalendarIcon, MoreVertical, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
@@ -15,31 +15,35 @@ import { MeasurementsTab } from "@/components/admin/client-detail/measurements-t
 import { TrainerNotesTab } from "@/components/admin/client-detail/trainer-notes-tab";
 import { WorkoutsTab } from "@/components/admin/client-detail/workouts-tab";
 import { VisitsTab } from "@/components/admin/client-detail/visits-tab";
-
-// Mock data — will be replaced with tRPC query
-const CLIENT = {
-  id: "1",
-  firstName: "Tres",
-  lastName: "Teschke",
-  email: "tres.teschke@gmail.com",
-  phone: "+1 214 453 9765",
-  gender: null as string | null,
-  birthDate: "1991-05-21",
-  location: "CARBON",
-  height: null as string | null,
-  weight: null as string | null,
-  aboutMe: null as string | null,
-  signupDate: "2019-07-24",
-  status: "ACTIVE",
-  billingStatus: "PAID",
-  lifecycleStage: "CLIENT",
-  assignedStaff: "Mada Hauck",
-  profileImageUrl: null as string | null,
-  tags: ["Nutrition Engineering"],
-};
+import { trpc } from "@/trpc/client";
 
 export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { data: client, isLoading, error } = trpc.clients.byId.useQuery({ id });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="h-6 w-6 animate-spin text-stone-400" />
+        <span className="ml-2 text-sm text-stone-500">Loading client...</span>
+      </div>
+    );
+  }
+
+  if (error || !client) {
+    return (
+      <div className="py-24 text-center">
+        <p className="text-sm text-red-600">Client not found or access denied.</p>
+        <Link href="/admin/clients" className="text-sm text-stone-500 underline mt-2 inline-block">
+          Back to accounts
+        </Link>
+      </div>
+    );
+  }
+
+  const staffName = client.assignedStaff
+    ? `${client.assignedStaff.firstName} ${client.assignedStaff.lastName}`
+    : null;
 
   return (
     <div className="space-y-6">
@@ -54,15 +58,20 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
 
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <Avatar name={`${CLIENT.firstName} ${CLIENT.lastName}`} src={CLIENT.profileImageUrl} size="lg" />
+            <Avatar name={`${client.firstName} ${client.lastName}`} src={client.profileImageUrl} size="lg" />
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold">{CLIENT.firstName} {CLIENT.lastName}</h1>
-                <span className="text-sm text-stone-500">Client</span>
+                <h1 className="text-2xl font-bold">{client.firstName} {client.lastName}</h1>
+                <span className="text-sm text-stone-500">{client.lifecycleStage.charAt(0) + client.lifecycleStage.slice(1).toLowerCase()}</span>
               </div>
               <div className="flex items-center gap-2 mt-1">
-                <Badge variant="success">{CLIENT.billingStatus === "PAID" ? "Paid" : CLIENT.billingStatus}</Badge>
-                <span className="text-sm text-stone-500">Sign up {new Date(CLIENT.signupDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                <Badge variant={client.billingStatus === "PAID" ? "success" : client.billingStatus === "NON_BILLED" ? "outline" : "warning"}>
+                  {client.billingStatus.charAt(0) + client.billingStatus.slice(1).toLowerCase().replace("_", " ")}
+                </Badge>
+                <span className="text-sm text-stone-500">
+                  Sign up {new Date(client.signupDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+                {staffName && <span className="text-sm text-stone-400">· Assigned to {staffName}</span>}
               </div>
             </div>
           </div>
@@ -97,7 +106,18 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         </TabsList>
 
         <TabsContent value="personal-info">
-          <PersonalInfoTab client={CLIENT} />
+          <PersonalInfoTab client={{
+            firstName: client.firstName,
+            lastName: client.lastName,
+            email: client.email || "",
+            phone: client.phone || "",
+            gender: client.gender,
+            birthDate: client.birthDate ? new Date(client.birthDate).toISOString().split("T")[0] : "",
+            location: "",
+            height: client.height,
+            weight: client.weight,
+            aboutMe: client.aboutMe,
+          }} />
         </TabsContent>
         <TabsContent value="packages">
           <PackagesTab clientId={id} />
@@ -139,11 +159,15 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           <Card>
             <CardHeader><CardTitle>Group Memberships</CardTitle></CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {CLIENT.tags.map((tag) => (
-                  <Badge key={tag} variant="info">{tag}</Badge>
-                ))}
-              </div>
+              {client.groups.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {client.groups.map((g) => (
+                    <Badge key={g.group.id} variant="info">{g.group.name}</Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-stone-500">Not a member of any groups.</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
