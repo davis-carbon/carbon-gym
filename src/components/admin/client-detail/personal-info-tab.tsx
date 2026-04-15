@@ -5,28 +5,54 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { trpc } from "@/trpc/client";
+import { useToast } from "@/components/ui/toast";
 import { Pencil } from "lucide-react";
 
-interface ClientData {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  gender: string | null;
-  birthDate: string;
-  location: string;
-  height: string | null;
-  weight: string | null;
-  aboutMe: string | null;
+interface PersonalInfoTabProps {
+  clientId: string;
+  client: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    gender: string | null;
+    birthDate: string;
+    location: string;
+    height: string | null;
+    weight: string | null;
+    aboutMe: string | null;
+  };
 }
 
-export function PersonalInfoTab({ client }: { client: ClientData }) {
+export function PersonalInfoTab({ clientId, client }: PersonalInfoTabProps) {
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(client);
 
+  const updateClient = trpc.clients.update.useMutation({
+    onSuccess: () => {
+      toast("success", "Client updated");
+      utils.clients.byId.invalidate({ id: clientId });
+      setEditing(false);
+    },
+    onError: (err) => toast("error", err.message),
+  });
+
   function handleSave() {
-    // TODO: call tRPC mutation
-    setEditing(false);
+    updateClient.mutate({
+      id: clientId,
+      firstName: form.firstName,
+      lastName: form.lastName,
+      email: form.email || undefined,
+      phone: form.phone || undefined,
+      gender: (form.gender as any) || undefined,
+      birthDate: form.birthDate ? new Date(form.birthDate) : undefined,
+      height: form.height || undefined,
+      weight: form.weight || undefined,
+      aboutMe: form.aboutMe || undefined,
+    });
   }
 
   if (editing) {
@@ -35,8 +61,10 @@ export function PersonalInfoTab({ client }: { client: ClientData }) {
         <CardHeader>
           <CardTitle>Basic Information</CardTitle>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
-            <Button size="sm" onClick={handleSave}>Save</Button>
+            <Button variant="secondary" size="sm" onClick={() => { setForm(client); setEditing(false); }}>Cancel</Button>
+            <Button size="sm" onClick={handleSave} disabled={updateClient.isPending}>
+              {updateClient.isPending ? "Saving..." : "Save"}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -57,7 +85,6 @@ export function PersonalInfoTab({ client }: { client: ClientData }) {
               ]}
             />
             <Input label="Birth Date" type="date" value={form.birthDate} onChange={(e) => setForm({ ...form, birthDate: e.target.value })} />
-            <Input label="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
             <Input label="Height" value={form.height || ""} onChange={(e) => setForm({ ...form, height: e.target.value || null })} />
             <Input label="Weight" value={form.weight || ""} onChange={(e) => setForm({ ...form, weight: e.target.value || null })} />
           </div>
@@ -79,11 +106,10 @@ export function PersonalInfoTab({ client }: { client: ClientData }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8">
             <InfoField label="First Name" value={client.firstName} />
             <InfoField label="Last Name" value={client.lastName} />
-            <InfoField label="Phone Number" value={client.phone} />
-            <InfoField label="Email" value={client.email} />
+            <InfoField label="Phone Number" value={client.phone || "—"} />
+            <InfoField label="Email" value={client.email || "—"} />
             <InfoField label="Gender" value={client.gender || "—"} />
             <InfoField label="Birth Date" value={client.birthDate ? new Date(client.birthDate).toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric", year: "numeric" }) : "—"} />
-            <InfoField label="Location" value={client.location} />
             <InfoField label="Height" value={client.height || "—"} />
             <InfoField label="Weight" value={client.weight || "—"} />
           </div>
@@ -91,13 +117,9 @@ export function PersonalInfoTab({ client }: { client: ClientData }) {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Other Information</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Other Information</CardTitle></CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8">
-            <InfoField label="About Me" value={client.aboutMe || "—"} />
-          </div>
+          <InfoField label="About Me" value={client.aboutMe || "—"} />
         </CardContent>
       </Card>
     </div>

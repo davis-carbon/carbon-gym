@@ -5,16 +5,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
-import { Pencil } from "lucide-react";
-
-const STAFF = [
-  { id: "1", name: "Aaron Davis", email: "aaron@carbontc.co", role: "OWNER", isActive: true },
-  { id: "2", name: "Bri Larson", email: "bri@carbontc.co", role: "TRAINER", isActive: true },
-  { id: "3", name: "Mada Hauck", email: "mada@carbontc.co", role: "TRAINER", isActive: true },
-  { id: "4", name: "Madeline Gladu", email: "madeline@carbontc.co", role: "TRAINER", isActive: true },
-  { id: "5", name: "Brandon Sherwood", email: "brandon@carbontc.co", role: "TRAINER", isActive: true },
-  { id: "6", name: "Michael Surges", email: "michael@carbontc.co", role: "TRAINER", isActive: false },
-];
+import { trpc } from "@/trpc/client";
+import { Pencil, Loader2 } from "lucide-react";
 
 const roleVariant: Record<string, "danger" | "info" | "success" | "outline"> = {
   OWNER: "danger",
@@ -24,6 +16,8 @@ const roleVariant: Record<string, "danger" | "info" | "success" | "outline"> = {
 };
 
 export default function SettingsPage() {
+  const { data: staffList, isLoading } = trpc.staff.list.useQuery();
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-6">Settings</h1>
@@ -44,22 +38,8 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-y-4 gap-x-8">
-                <div>
-                  <p className="text-xs text-stone-500 mb-1">Credentials</p>
-                  <p className="text-sm text-stone-900">—</p>
-                </div>
-                <div>
-                  <p className="text-xs text-stone-500 mb-1">Website</p>
-                  <p className="text-sm text-stone-900">https://www.carbontc.co</p>
-                </div>
-                <div>
-                  <p className="text-xs text-stone-500 mb-1">Business Bio</p>
-                  <p className="text-sm text-stone-900">—</p>
-                </div>
-                <div>
-                  <p className="text-xs text-stone-500 mb-1">Auto Reply</p>
-                  <p className="text-sm text-stone-900">—</p>
-                </div>
+                <div><p className="text-xs text-stone-500 mb-1">Website</p><p className="text-sm text-stone-900">https://www.carbontc.co</p></div>
+                <div><p className="text-xs text-stone-500 mb-1">Timezone</p><p className="text-sm text-stone-900">America/Denver (MT)</p></div>
               </div>
             </CardContent>
           </Card>
@@ -67,13 +47,8 @@ export default function SettingsPage() {
 
         <TabsContent value="personal">
           <Card>
-            <CardHeader>
-              <CardTitle>Personal Information</CardTitle>
-              <Button variant="ghost" size="sm"><Pencil className="h-4 w-4" /> Edit</Button>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-stone-500">Personal profile settings will appear here once auth is connected.</p>
-            </CardContent>
+            <CardHeader><CardTitle>Personal Information</CardTitle></CardHeader>
+            <CardContent><p className="text-sm text-stone-500">Edit your profile in Supabase Auth settings.</p></CardContent>
           </Card>
         </TabsContent>
 
@@ -84,34 +59,36 @@ export default function SettingsPage() {
               <Button size="sm">Invite Staff</Button>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {STAFF.map((s) => (
-                  <div key={s.id} className="flex items-center justify-between rounded-lg border border-stone-200 p-4">
-                    <div className="flex items-center gap-3">
-                      <Avatar name={s.name} size="sm" />
-                      <div>
-                        <p className="text-sm font-medium text-stone-900">{s.name}</p>
-                        <p className="text-xs text-stone-500">{s.email}</p>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-stone-400" /></div>
+              ) : (
+                <div className="space-y-3">
+                  {(staffList ?? []).map((s) => (
+                    <div key={s.id} className="flex items-center justify-between rounded-lg border border-stone-200 p-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar name={`${s.firstName} ${s.lastName}`} size="sm" />
+                        <div>
+                          <p className="text-sm font-medium text-stone-900">{s.firstName} {s.lastName}</p>
+                          <p className="text-xs text-stone-500">{s.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={roleVariant[s.role] || "outline"}>
+                          {s.role.charAt(0) + s.role.slice(1).toLowerCase()}
+                        </Badge>
+                        {!s.isActive && <Badge variant="outline">Inactive</Badge>}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={roleVariant[s.role] || "outline"}>
-                        {s.role.charAt(0) + s.role.slice(1).toLowerCase()}
-                      </Badge>
-                      {!s.isActive && <Badge variant="outline">Inactive</Badge>}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="billing">
           <Card>
-            <CardHeader>
-              <CardTitle>Billing & Stripe</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Billing & Stripe</CardTitle></CardHeader>
             <CardContent>
               <p className="text-sm text-stone-500">Stripe integration settings will appear here once connected.</p>
               <Button variant="secondary" size="sm" className="mt-4">Connect Stripe</Button>

@@ -108,7 +108,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         </TabsList>
 
         <TabsContent value="personal-info">
-          <PersonalInfoTab client={{
+          <PersonalInfoTab clientId={id} client={{
             firstName: client.firstName,
             lastName: client.lastName,
             email: client.email || "",

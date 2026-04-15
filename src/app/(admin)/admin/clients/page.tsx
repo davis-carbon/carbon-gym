@@ -10,6 +10,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { AddClientModal } from "@/components/admin/add-client-modal";
 import { trpc } from "@/trpc/client";
+import { useToast } from "@/components/ui/toast";
 import { Plus, Mail, Archive, Loader2 } from "lucide-react";
 
 interface ClientRow {
@@ -97,15 +98,31 @@ const columns: ColumnDef<ClientRow, unknown>[] = [
     id: "actions",
     header: "",
     size: 48,
-    cell: () => (
-      <DropdownMenu>
-        <DropdownItem><Mail className="h-4 w-4" /> Message</DropdownItem>
-        <DropdownItem danger><Archive className="h-4 w-4" /> Archive</DropdownItem>
-      </DropdownMenu>
-    ),
+    cell: ({ row }) => <ClientActions clientId={row.original.id} clientName={`${row.original.firstName} ${row.original.lastName}`} />,
     enableSorting: false,
   },
 ];
+
+function ClientActions({ clientId, clientName }: { clientId: string; clientName: string }) {
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
+  const archiveClient = trpc.clients.archive.useMutation({
+    onSuccess: () => { toast("success", `${clientName} archived`); utils.clients.list.invalidate(); },
+    onError: (err) => toast("error", err.message),
+  });
+
+  return (
+    <DropdownMenu>
+      <DropdownItem><Mail className="h-4 w-4" /> Message</DropdownItem>
+      <DropdownItem
+        danger
+        onClick={() => { if (confirm(`Archive ${clientName}?`)) archiveClient.mutate({ id: clientId }); }}
+      >
+        <Archive className="h-4 w-4" /> Archive
+      </DropdownItem>
+    </DropdownMenu>
+  );
+}
 
 export default function ClientsPage() {
   const router = useRouter();
