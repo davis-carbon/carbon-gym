@@ -3,66 +3,51 @@
 import { useState } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { SearchInput } from "@/components/ui/search-input";
-import { Send, Paperclip, PenSquare } from "lucide-react";
-
-interface Thread {
-  id: string;
-  clientName: string;
-  lastMessage: string;
-  lastMessageAt: string;
-  unread: boolean;
-  withStaff?: string;
-}
-
-const MOCK_THREADS: Thread[] = [
-  { id: "1", clientName: "Shane Flores", lastMessage: "This is a reminder to complete your assessment today: CARBO...", lastMessageAt: "21h", unread: false },
-  { id: "2", clientName: "Stephanie Taylor Twohey", lastMessage: "Dont program anything this week cuz Ill be hiking and biking...", lastMessageAt: "2d", unread: true },
-  { id: "3", clientName: "Miguel Garza", lastMessage: "on it", lastMessageAt: "Apr 5", unread: false },
-  { id: "4", clientName: "Michael Wood", lastMessage: "heres the stories we were talking about", lastMessageAt: "Apr 4", unread: false },
-  { id: "5", clientName: "Michael Wood", lastMessage: "yes I just got that fixed for you! back on for Friday @ 930am...", lastMessageAt: "Apr 1", unread: false, withStaff: "Bri Larson" },
-  { id: "6", clientName: "Michael Wood", lastMessage: "Awesome!", lastMessageAt: "Mar 13", unread: false, withStaff: "Madeline Gladu" },
-  { id: "7", clientName: "Nolan Wheeler", lastMessage: "This is a reminder to complete your assessment today: Dry N...", lastMessageAt: "Mar 5", unread: false },
-  { id: "8", clientName: "Gabriel Reyes", lastMessage: "My knee has been bugging me. I am working on it but want...", lastMessageAt: "Feb 27", unread: false },
-  { id: "9", clientName: "Matthew Schweitzer", lastMessage: "Sounds good, see you Thursday!", lastMessageAt: "Feb 17", unread: false },
-  { id: "10", clientName: "Brett Hart", lastMessage: "Thanks for the nutrition info, really helpful", lastMessageAt: "Feb 10", unread: false },
-];
-
-interface Message {
-  id: string;
-  sender: string;
-  senderType: "staff" | "client";
-  body: string;
-  sentAt: string;
-}
-
-const MOCK_MESSAGES: Record<string, Message[]> = {
-  "2": [
-    { id: "1", sender: "Stephanie Taylor Twohey", senderType: "client", body: "Hey! Quick heads up — dont program anything this week cuz Ill be hiking and biking all week. Back at it next Monday!", sentAt: "2026-04-12T09:15:00" },
-    { id: "2", sender: "Aaron Davis", senderType: "staff", body: "No worries! Enjoy the time outdoors. We'll pick back up Monday. Have fun!", sentAt: "2026-04-12T09:22:00" },
-    { id: "3", sender: "Stephanie Taylor Twohey", senderType: "client", body: "Thanks! 🙌", sentAt: "2026-04-12T09:24:00" },
-  ],
-  "3": [
-    { id: "1", sender: "Aaron Davis", senderType: "staff", body: "Hey Miguel, can you send me your updated availability for next week?", sentAt: "2026-04-04T14:30:00" },
-    { id: "2", sender: "Miguel Garza", senderType: "client", body: "on it", sentAt: "2026-04-05T08:15:00" },
-  ],
-};
+import { trpc } from "@/trpc/client";
+import { useToast } from "@/components/ui/toast";
+import { Send, Paperclip, PenSquare, Loader2 } from "lucide-react";
 
 export default function MessagesPage() {
+  const { toast } = useToast();
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [filter, setFilter] = useState<"all" | "unread" | "scheduled">("all");
 
-  const filteredThreads = MOCK_THREADS.filter((t) => {
-    if (filter === "unread" && !t.unread) return false;
+  // Fetch thread list
+  const { data: threads, isLoading: threadsLoading } = trpc.messages.listThreads.useQuery({
+    unreadOnly: filter === "unread",
+  });
+
+  // Fetch selected thread messages
+  const { data: thread, isLoading: threadLoading } = trpc.messages.getThread.useQuery(
+    { threadId: selectedThread! },
+    { enabled: !!selectedThread }
+  );
+
+  // Send message mutation
+  const utils = trpc.useUtils();
+  const sendMessage = trpc.messages.send.useMutation({
+    onSuccess: () => {
+      setNewMessage("");
+      utils.messages.getThread.invalidate({ threadId: selectedThread! });
+      utils.messages.listThreads.invalidate();
+    },
+    onError: (err) => toast("error", err.message),
+  });
+
+  const filteredThreads = (threads ?? []).filter((t) => {
     if (search && !t.clientName.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
-  const messages = selectedThread ? (MOCK_MESSAGES[selectedThread] ?? []) : [];
-  const selectedClient = MOCK_THREADS.find((t) => t.id === selectedThread);
+  const selectedClient = threads?.find((t) => t.id === selectedThread);
+
+  function handleSend() {
+    if (!newMessage.trim() || !selectedThread) return;
+    sendMessage.mutate({ threadId: selectedThread, body: newMessage.trim() });
+  }
 
   return (
     <div className="flex h-[calc(100vh-120px)] rounded-xl border border-stone-200 bg-white overflow-hidden">
@@ -75,20 +60,14 @@ export default function MessagesPage() {
               <PenSquare className="h-5 w-5" />
             </button>
           </div>
-          <SearchInput
-            placeholder="Search messages"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <SearchInput placeholder="Search messages" value={search} onChange={(e) => setSearch(e.target.value)} />
           <div className="flex gap-2 mt-3">
             {(["all", "unread", "scheduled"] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
                 className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                  filter === f
-                    ? "bg-stone-900 text-white"
-                    : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                  filter === f ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-600 hover:bg-stone-200"
                 }`}
               >
                 {f === "unread" && "● "}{f.charAt(0).toUpperCase() + f.slice(1)}
@@ -97,34 +76,41 @@ export default function MessagesPage() {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {filteredThreads.map((thread) => (
-            <button
-              key={thread.id}
-              onClick={() => setSelectedThread(thread.id)}
-              className={`w-full text-left px-4 py-3 border-b border-stone-100 hover:bg-stone-50 transition-colors ${
-                selectedThread === thread.id ? "bg-stone-50" : ""
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                <Avatar name={thread.clientName} size="sm" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className={`text-sm ${thread.unread ? "font-bold" : "font-medium"} text-stone-900 truncate`}>
-                      {thread.clientName}
-                    </span>
-                    <span className="text-xs text-stone-400 flex-shrink-0 ml-2">{thread.lastMessageAt}</span>
+          {threadsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-stone-400" />
+            </div>
+          ) : filteredThreads.length === 0 ? (
+            <p className="text-sm text-stone-400 text-center py-8">No conversations yet.</p>
+          ) : (
+            filteredThreads.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setSelectedThread(t.id)}
+                className={`w-full text-left px-4 py-3 border-b border-stone-100 hover:bg-stone-50 transition-colors ${
+                  selectedThread === t.id ? "bg-stone-50" : ""
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <Avatar name={t.clientName} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-sm ${t.unread ? "font-bold" : "font-medium"} text-stone-900 truncate`}>
+                        {t.clientName}
+                      </span>
+                      <span className="text-xs text-stone-400 flex-shrink-0 ml-2">
+                        {new Date(t.lastMessageAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </span>
+                    </div>
+                    <p className={`text-xs mt-0.5 truncate ${t.unread ? "text-stone-700 font-medium" : "text-stone-500"}`}>
+                      {t.unread && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5 align-middle" />}
+                      {t.lastMessage}
+                    </p>
                   </div>
-                  {thread.withStaff && (
-                    <span className="text-xs text-stone-400">with {thread.withStaff}</span>
-                  )}
-                  <p className={`text-xs mt-0.5 truncate ${thread.unread ? "text-stone-700 font-medium" : "text-stone-500"}`}>
-                    {thread.unread && <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5 align-middle" />}
-                    {thread.lastMessage}
-                  </p>
                 </div>
-              </div>
-            </button>
-          ))}
+              </button>
+            ))
+          )}
         </div>
       </div>
 
@@ -135,33 +121,32 @@ export default function MessagesPage() {
             {/* Chat header */}
             <div className="flex items-center gap-3 px-6 py-4 border-b border-stone-200">
               <Avatar name={selectedClient.clientName} size="sm" />
-              <div>
-                <p className="font-semibold text-sm">{selectedClient.clientName}</p>
-                {selectedClient.withStaff && (
-                  <p className="text-xs text-stone-400">with {selectedClient.withStaff}</p>
-                )}
-              </div>
+              <p className="font-semibold text-sm">{selectedClient.clientName}</p>
             </div>
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {messages.map((msg) => {
-                const isStaff = msg.senderType === "staff";
-                return (
-                  <div key={msg.id} className={`flex ${isStaff ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 ${
-                      isStaff
-                        ? "bg-stone-900 text-white"
-                        : "bg-stone-100 text-stone-900"
-                    }`}>
-                      <p className="text-sm">{msg.body}</p>
-                      <p className={`text-xs mt-1 ${isStaff ? "text-stone-400" : "text-stone-500"}`}>
-                        {new Date(msg.sentAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-                      </p>
+              {threadLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-stone-400" />
+                </div>
+              ) : (
+                (thread?.messages ?? []).map((msg) => {
+                  const isStaff = msg.senderType === "STAFF";
+                  return (
+                    <div key={msg.id} className={`flex ${isStaff ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[70%] rounded-2xl px-4 py-2.5 ${
+                        isStaff ? "bg-stone-900 text-white" : "bg-stone-100 text-stone-900"
+                      }`}>
+                        <p className="text-sm">{msg.body}</p>
+                        <p className={`text-xs mt-1 ${isStaff ? "text-stone-400" : "text-stone-500"}`}>
+                          {new Date(msg.sentAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
 
             {/* Input */}
@@ -177,19 +162,13 @@ export default function MessagesPage() {
                   className="flex-1 rounded-xl border border-stone-300 px-4 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-500 focus:ring-offset-1 resize-none"
                   rows={1}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      if (newMessage.trim()) {
-                        console.log("Send:", newMessage);
-                        setNewMessage("");
-                      }
-                    }
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
                   }}
                 />
                 <Button
                   size="sm"
-                  disabled={!newMessage.trim()}
-                  onClick={() => { console.log("Send:", newMessage); setNewMessage(""); }}
+                  disabled={!newMessage.trim() || sendMessage.isPending}
+                  onClick={handleSend}
                 >
                   <Send className="h-4 w-4" />
                 </Button>
