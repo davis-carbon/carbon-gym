@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/trpc/client";
+import { useRouter } from "next/navigation";
 import { Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 
 export default function GroupsPage() {
   const [search, setSearch] = useState("");
+  const router = useRouter();
   const { data, isLoading } = trpc.groups.list.useQuery({ search: search || undefined });
 
   return (
@@ -38,7 +40,7 @@ export default function GroupsPage() {
             </thead>
             <tbody>
               {(data ?? []).map((group) => (
-                <tr key={group.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 cursor-pointer transition-colors">
+                <tr key={group.id} onClick={() => router.push(`/admin/groups/${group.id}`)} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 cursor-pointer transition-colors">
                   <td className="px-4 py-3 font-medium">{group.name}</td>
                   <td className="px-4 py-3">{group._count.members} Members</td>
                   <td className="px-4 py-3 text-right">

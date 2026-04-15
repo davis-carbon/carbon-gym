@@ -127,10 +127,18 @@ function ClientActions({ clientId, clientName }: { clientId: string; clientName:
 export default function ClientsPage() {
   const router = useRouter();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [lifecycleFilter, setLifecycleFilter] = useState("");
+  const [staffFilter, setStaffFilter] = useState("");
 
   const { data, isLoading, error } = trpc.clients.list.useQuery({
     limit: 100,
-  });
+    status: statusFilter || undefined,
+    lifecycleStage: lifecycleFilter || undefined,
+    assignedStaffId: staffFilter || undefined,
+  } as any);
+
+  const { data: staffList } = trpc.staff.list.useQuery();
 
   const clientRows: ClientRow[] = (data?.clients ?? []).map((c) => ({
     id: c.id,
@@ -155,6 +163,35 @@ export default function ClientsPage() {
         <Button onClick={() => setShowAddModal(true)}>
           <Plus className="h-4 w-4" /> Add New Client
         </Button>
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm text-stone-700">
+          <option value="">All Statuses</option>
+          <option value="ACTIVE">Active</option>
+          <option value="INACTIVE">Inactive</option>
+          <option value="PENDING_CANCELLATION">Pending Cancellation</option>
+          <option value="SUSPENDED">Suspended</option>
+        </select>
+        <select value={lifecycleFilter} onChange={(e) => setLifecycleFilter(e.target.value)} className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm text-stone-700">
+          <option value="">All Lifecycle Stages</option>
+          <option value="LEAD">Lead</option>
+          <option value="PROSPECT">Prospect</option>
+          <option value="CLIENT">Client</option>
+          <option value="FORMER_CLIENT">Former Client</option>
+        </select>
+        <select value={staffFilter} onChange={(e) => setStaffFilter(e.target.value)} className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm text-stone-700">
+          <option value="">All Staff</option>
+          {(staffList ?? []).map((s) => (
+            <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
+          ))}
+        </select>
+        {(statusFilter || lifecycleFilter || staffFilter) && (
+          <button onClick={() => { setStatusFilter(""); setLifecycleFilter(""); setStaffFilter(""); }} className="text-xs text-stone-500 hover:text-stone-700 underline">
+            Clear filters
+          </button>
+        )}
       </div>
 
       <div className="rounded-xl border border-stone-200 bg-white p-6">

@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/trpc/client";
+import { CreatePlanModal } from "@/components/admin/create-plan-modal";
 import { Plus, Pencil, Copy, Archive, Loader2 } from "lucide-react";
 
 interface PlanRow {
@@ -59,6 +61,7 @@ const columns: ColumnDef<PlanRow, unknown>[] = [
 ];
 
 export default function PlansPage() {
+  const [showCreate, setShowCreate] = useState(false);
   const { data, isLoading } = trpc.plans.list.useQuery();
 
   const planRows: PlanRow[] = (data ?? []).map((p) => ({
@@ -77,7 +80,7 @@ export default function PlansPage() {
         <h1 className="text-2xl font-bold">Plans</h1>
         <div className="flex gap-2">
           <Button variant="secondary">Manage Routines</Button>
-          <Button><Plus className="h-4 w-4" /> Add Plan</Button>
+          <Button onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" /> Add Plan</Button>
         </div>
       </div>
       <div className="rounded-xl border border-stone-200 bg-white p-6">
@@ -90,6 +93,8 @@ export default function PlansPage() {
           <DataTable data={planRows} columns={columns} searchPlaceholder="Search plans..." />
         )}
       </div>
+
+      <CreatePlanModal open={showCreate} onClose={() => setShowCreate(false)} />
     </div>
   );
 }
