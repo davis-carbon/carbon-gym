@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { trpc } from "@/trpc/client";
 import { CreatePlanModal } from "@/components/admin/create-plan-modal";
-import { Plus, Pencil, Copy, Archive, Loader2 } from "lucide-react";
+import { AssignPlanModal } from "@/components/admin/assign-plan-modal";
+import { useToast } from "@/components/ui/toast";
+import { Plus, Pencil, Copy, Archive, Users, Loader2 } from "lucide-react";
 
 interface PlanRow {
   id: string;
@@ -49,16 +51,35 @@ const columns: ColumnDef<PlanRow, unknown>[] = [
     id: "actions",
     header: "",
     size: 48,
-    cell: () => (
-      <DropdownMenu>
-        <DropdownItem><Pencil className="h-4 w-4" /> Edit</DropdownItem>
-        <DropdownItem><Copy className="h-4 w-4" /> Duplicate</DropdownItem>
-        <DropdownItem danger><Archive className="h-4 w-4" /> Archive</DropdownItem>
-      </DropdownMenu>
-    ),
+    cell: ({ row }) => <PlanActions planId={row.original.id} planName={row.original.name} />,
     enableSorting: false,
   },
 ];
+
+function PlanActions({ planId, planName }: { planId: string; planName: string }) {
+  const [showAssign, setShowAssign] = useState(false);
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
+
+  const duplicatePlan = trpc.plans.duplicate.useMutation({
+    onSuccess: () => { toast("success", "Plan duplicated"); utils.plans.list.invalidate(); },
+    onError: (err) => toast("error", err.message),
+  });
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownItem onClick={() => setShowAssign(true)}>
+          <Users className="h-4 w-4" /> Assign to Client
+        </DropdownItem>
+        <DropdownItem onClick={() => duplicatePlan.mutate({ id: planId })}>
+          <Copy className="h-4 w-4" /> Duplicate
+        </DropdownItem>
+      </DropdownMenu>
+      <AssignPlanModal open={showAssign} onClose={() => setShowAssign(false)} planId={planId} planName={planName} />
+    </>
+  );
+}
 
 export default function PlansPage() {
   const [showCreate, setShowCreate] = useState(false);

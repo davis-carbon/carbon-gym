@@ -148,13 +148,45 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         <TabsContent value="assessments">
           <Card>
             <CardHeader><CardTitle>Assessments</CardTitle></CardHeader>
-            <CardContent><p className="text-sm text-stone-500">Completed assessments will appear here.</p></CardContent>
+            <CardContent>
+              {client.assessmentSubmissions && client.assessmentSubmissions.length > 0 ? (
+                <div className="space-y-3">
+                  {client.assessmentSubmissions.map((sub) => (
+                    <div key={sub.id} className="flex items-center justify-between rounded-lg border border-stone-200 p-4">
+                      <div>
+                        <p className="font-medium text-sm">{sub.assessment.name}</p>
+                        <p className="text-xs text-stone-500">Completed {new Date(sub.completedAt).toLocaleDateString()}</p>
+                      </div>
+                      <Badge variant="success">Completed</Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-stone-400">No assessments completed.</p>
+              )}
+            </CardContent>
           </Card>
         </TabsContent>
         <TabsContent value="resources">
           <Card>
             <CardHeader><CardTitle>Resources</CardTitle></CardHeader>
-            <CardContent><p className="text-sm text-stone-500">Assigned resources will appear here.</p></CardContent>
+            <CardContent>
+              {client.resourceAssignments && client.resourceAssignments.length > 0 ? (
+                <div className="space-y-3">
+                  {client.resourceAssignments.map((ra) => (
+                    <div key={ra.id} className="flex items-center justify-between rounded-lg border border-stone-200 p-4">
+                      <div>
+                        <p className="font-medium text-sm">{ra.resource.name}</p>
+                        <p className="text-xs text-stone-500">Assigned {new Date(ra.assignedAt).toLocaleDateString()}</p>
+                      </div>
+                      {ra.viewedAt ? <Badge variant="success">Viewed</Badge> : <Badge variant="outline">Not viewed</Badge>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-stone-400">No resources assigned.</p>
+              )}
+            </CardContent>
           </Card>
         </TabsContent>
         <TabsContent value="groups">

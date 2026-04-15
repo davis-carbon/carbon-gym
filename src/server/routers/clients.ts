@@ -63,6 +63,8 @@ export const clientsRouter = createTRPCRouter({
           trainerNotes: { orderBy: { createdAt: "desc" }, include: { staff: true } },
           planAssignments: { include: { plan: true }, orderBy: { createdAt: "desc" } },
           appointments: { orderBy: { scheduledAt: "desc" }, take: 20, include: { service: true, staff: true } },
+          assessmentSubmissions: { include: { assessment: true }, orderBy: { completedAt: "desc" } },
+          resourceAssignments: { include: { resource: true }, orderBy: { assignedAt: "desc" } },
         },
       });
     }),
