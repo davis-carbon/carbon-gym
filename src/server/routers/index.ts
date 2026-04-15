@@ -10,6 +10,8 @@ import { measurementsRouter } from "./measurements";
 import { notesRouter } from "./notes";
 import { workoutsRouter } from "./workouts";
 import { staffRouter } from "./staff";
+import { automationsRouter } from "./automations";
+import { tagsRouter } from "./tags";
 
 export const appRouter = createTRPCRouter({
   clients: clientsRouter,
@@ -23,6 +25,8 @@ export const appRouter = createTRPCRouter({
   notes: notesRouter,
   workouts: workoutsRouter,
   staff: staffRouter,
+  automations: automationsRouter,
+  tags: tagsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -14,6 +14,9 @@ export default function MessagesPage() {
   const [search, setSearch] = useState("");
   const [newMessage, setNewMessage] = useState("");
   const [filter, setFilter] = useState<"all" | "unread" | "scheduled">("all");
+  const [showNewConvo, setShowNewConvo] = useState(false);
+  const [newConvoClientId, setNewConvoClientId] = useState("");
+  const [newConvoMsg, setNewConvoMsg] = useState("");
 
   // Fetch thread list
   const { data: threads, isLoading: threadsLoading } = trpc.messages.listThreads.useQuery({
@@ -37,6 +40,20 @@ export default function MessagesPage() {
     onError: (err) => toast("error", err.message),
   });
 
+  const createThread = trpc.messages.createThread.useMutation({
+    onSuccess: (newThread) => {
+      toast("success", "Conversation started");
+      utils.messages.listThreads.invalidate();
+      setSelectedThread(newThread.id);
+      setShowNewConvo(false);
+      setNewConvoClientId("");
+      setNewConvoMsg("");
+    },
+    onError: (err) => toast("error", err.message),
+  });
+
+  const { data: clientsForConvo } = trpc.clients.list.useQuery({ limit: 50 }, { enabled: showNewConvo });
+
   const filteredThreads = (threads ?? []).filter((t) => {
     if (search && !t.clientName.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
@@ -56,7 +73,7 @@ export default function MessagesPage() {
         <div className="p-4 border-b border-stone-200">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-bold">Messages</h1>
-            <button className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-600 transition-colors">
+            <button onClick={() => setShowNewConvo(true)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-600 transition-colors">
               <PenSquare className="h-5 w-5" />
             </button>
           </div>
@@ -186,6 +203,52 @@ export default function MessagesPage() {
           </div>
         )}
       </div>
+
+      {/* New conversation modal */}
+      {showNewConvo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowNewConvo(false)}>
+          <div className="fixed inset-0 bg-black/40" />
+          <div className="relative w-full max-w-md rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()} style={{ animation: "fade-in 0.15s ease-out" }}>
+            <div className="border-b border-stone-200 px-6 py-4">
+              <h2 className="text-lg font-semibold">New Conversation</h2>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Client</label>
+                <select
+                  value={newConvoClientId}
+                  onChange={(e) => setNewConvoClientId(e.target.value)}
+                  className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-stone-500"
+                >
+                  <option value="">Select client...</option>
+                  {(clientsForConvo?.clients ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>{c.firstName} {c.lastName}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Message</label>
+                <textarea
+                  value={newConvoMsg}
+                  onChange={(e) => setNewConvoMsg(e.target.value)}
+                  placeholder="Type your first message..."
+                  className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm placeholder:text-stone-400 resize-none"
+                  rows={3}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-stone-200 px-6 py-4">
+              <Button variant="secondary" onClick={() => setShowNewConvo(false)}>Cancel</Button>
+              <Button
+                onClick={() => createThread.mutate({ clientId: newConvoClientId, initialMessage: newConvoMsg })}
+                disabled={!newConvoClientId || !newConvoMsg.trim() || createThread.isPending}
+              >
+                {createThread.isPending ? "Starting..." : "Start Conversation"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

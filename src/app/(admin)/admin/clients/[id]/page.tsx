@@ -127,7 +127,32 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         <TabsContent value="payments">
           <Card>
             <CardHeader><CardTitle>Payments / Products</CardTitle></CardHeader>
-            <CardContent><p className="text-sm text-stone-500">Payment history will appear here once Stripe is connected.</p></CardContent>
+            <CardContent>
+              {(() => {
+                const cf = (client.customFields || {}) as any;
+                const hasSubscription = cf.hasSubscription;
+                const hasPurchase = cf.hasPurchase;
+                const nextPayment = cf.nextPayment;
+                if (!hasSubscription && !hasPurchase) return <p className="text-sm text-stone-400">No billing history. Connect Stripe to enable payments.</p>;
+                return (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><p className="text-xs text-stone-500">Has Subscription</p><p className="text-sm font-medium">{hasSubscription ? "Yes" : "No"}</p></div>
+                      <div><p className="text-xs text-stone-500">Has Purchase</p><p className="text-sm font-medium">{hasPurchase ? "Yes" : "No"}</p></div>
+                    </div>
+                    {nextPayment && (
+                      <div className="rounded-lg border border-stone-200 p-4">
+                        <p className="text-xs text-stone-500 mb-1">Next Payment</p>
+                        <p className="text-sm font-medium">
+                          {nextPayment.date ? new Date(nextPayment.date * 1000).toLocaleDateString() : "—"}
+                          {nextPayment.data_point ? ` — $${(nextPayment.data_point / 100).toFixed(2)}` : ""}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </CardContent>
           </Card>
         </TabsContent>
         <TabsContent value="measurements">
@@ -141,8 +166,22 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
         </TabsContent>
         <TabsContent value="nutrition">
           <Card>
-            <CardHeader><CardTitle>Nutrition</CardTitle></CardHeader>
-            <CardContent><p className="text-sm text-stone-500">Nutrition plans and logging will appear here.</p></CardContent>
+            <CardHeader><CardTitle>Nutrition Goals</CardTitle></CardHeader>
+            <CardContent>
+              {(() => {
+                const cf = (client.customFields || {}) as any;
+                const goals = cf.nutritionGoals;
+                if (!goals || (!goals.calories && !goals.protein)) return <p className="text-sm text-stone-400">No nutrition goals set.</p>;
+                return (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <NutrientCard label="Calories" value={goals.calories} unit="kcal" />
+                    <NutrientCard label="Protein" value={goals.protein} unit="g" />
+                    <NutrientCard label="Carbs" value={goals.carbs} unit="g" />
+                    <NutrientCard label="Fat" value={goals.fat} unit="g" />
+                  </div>
+                );
+              })()}
+            </CardContent>
           </Card>
         </TabsContent>
         <TabsContent value="assessments">
@@ -190,6 +229,20 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           </Card>
         </TabsContent>
         <TabsContent value="groups">
+          {/* Tags */}
+          <Card className="mb-4">
+            <CardHeader><CardTitle>Tags</CardTitle></CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {client.tags.map((t) => (
+                  <Badge key={t.tag.id} variant="default">{t.tag.name}</Badge>
+                ))}
+                {client.tags.length === 0 && <p className="text-sm text-stone-400">No tags.</p>}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Groups */}
           <Card>
             <CardHeader><CardTitle>Group Memberships</CardTitle></CardHeader>
             <CardContent>
@@ -209,6 +262,15 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           <VisitsTab clientId={id} />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function NutrientCard({ label, value, unit }: { label: string; value: number | null | undefined; unit: string }) {
+  return (
+    <div className="rounded-lg border border-stone-200 p-3 text-center">
+      <p className="text-2xl font-bold text-stone-900">{value ?? "—"}</p>
+      <p className="text-xs text-stone-500">{label} {value ? unit : ""}</p>
     </div>
   );
 }
