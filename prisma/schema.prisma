@@ -238,6 +238,7 @@ model StaffMember {
   createdAutomations  Automation[]
   availabilitySchedules AvailabilitySchedule[]
   recurringMembers    RecurringMember[]
+  trainedWorkouts     ClientWorkout[]   @relation("WorkoutTrainer")
 
   @@index([organizationId])
   @@index([userId])
@@ -296,6 +297,7 @@ model Client {
   recurringMembers RecurringMember[]
   messageParticipants MessageParticipant[]
   pushSubscriptions   ClientPushSubscription[]
+  clientWorkouts   ClientWorkout[]
 
   @@index([organizationId])
   @@index([assignedStaffId])
@@ -398,6 +400,7 @@ model Exercise {
   createdBy       StaffMember?     @relation(fields: [createdById], references: [id])
   routineExercises RoutineExercise[]
   workoutLogExercises WorkoutLogExercise[]
+  workoutBlockExercises WorkoutBlockExercise[]
 
   @@index([organizationId])
   @@index([muscleGroup])
@@ -421,10 +424,11 @@ model WorkoutPlan {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  organization Organization    @relation(fields: [organizationId], references: [id])
-  createdBy    StaffMember?    @relation(fields: [createdById], references: [id])
-  routines     PlanRoutine[]
-  assignments  PlanAssignment[]
+  organization    Organization    @relation(fields: [organizationId], references: [id])
+  createdBy       StaffMember?    @relation(fields: [createdById], references: [id])
+  routines        PlanRoutine[]
+  assignments     PlanAssignment[]
+  clientWorkouts  ClientWorkout[] @relation("WorkoutFromPlan")
 
   @@index([organizationId])
   @@index([status])
@@ -482,6 +486,93 @@ model PlanAssignment {
 
   @@index([clientId])
   @@index([planId])
+}
+
+// ─────────────────────────────────────────────
+// CLIENT WORKOUTS (Calendar Builder)
+// The core daily tool — trainers program workouts
+// per client per day on the calendar view.
+// ─────────────────────────────────────────────
+
+model ClientWorkout {
+  id             String    @id @default(cuid())
+  clientId       String
+  trainerId      String?
+  planId         String?   // If created from a plan template
+  title          String    @default("Workout") // e.g., "Aerobic", "Upper Body A"
+  date           DateTime  // Which calendar day
+  scheduledAt    DateTime? // Specific time if scheduled
+  completedAt    DateTime? // When the client completed it
+  isCompleted    Boolean   @default(false)
+  totalTime      Int?      // Seconds
+  totalWeight    Float?    // lbs total volume
+  totalDistance   Float?    // miles
+  totalReps      Int?
+  totalCalories  Int?
+  notes          String?
+  source         String    @default("calendar") // "calendar", "plan", "copied"
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  client  Client        @relation(fields: [clientId], references: [id])
+  trainer StaffMember?  @relation("WorkoutTrainer", fields: [trainerId], references: [id])
+  plan    WorkoutPlan?  @relation("WorkoutFromPlan", fields: [planId], references: [id])
+  blocks  WorkoutBlock[]
+
+  @@index([clientId, date])
+  @@index([trainerId])
+  @@index([date])
+}
+
+model WorkoutBlock {
+  id          String  @id @default(cuid())
+  workoutId   String
+  name        String  @default("Block A") // "Block A", "Block B", etc.
+  blockType   String  @default("Normal")  // "Normal", "Superset", "Circuit", "EMOM", "AMRAP"
+  sortOrder   Int     @default(0)
+
+  workout   ClientWorkout       @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  exercises WorkoutBlockExercise[]
+
+  @@index([workoutId])
+}
+
+model WorkoutBlockExercise {
+  id          String  @id @default(cuid())
+  blockId     String
+  exerciseId  String
+  sortOrder   Int     @default(0)
+  notes       String?
+  restSeconds Int?    // Rest between sets (in seconds)
+  overrideCalories Int? // Override calories burned
+
+  block    WorkoutBlock          @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  exercise Exercise              @relation(fields: [exerciseId], references: [id])
+  sets     WorkoutBlockExerciseSet[]
+
+  @@index([blockId])
+}
+
+model WorkoutBlockExerciseSet {
+  id          String  @id @default(cuid())
+  exerciseId  String  // References WorkoutBlockExercise.id
+  setNumber   Int
+  reps        Int?
+  weight      Float?  // lbs or kg
+  time        Int?    // Seconds (for timed exercises)
+  distance    Float?  // Meters or miles
+  calories    Int?
+  rpe         Float?  // Rate of perceived exertion
+  isCompleted Boolean @default(false) // Client marked as done
+  actualReps    Int?    // What client actually did
+  actualWeight  Float?
+  actualTime    Int?
+  actualDistance Float?
+  actualCalories Int?
+
+  blockExercise WorkoutBlockExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@index([exerciseId])
 }
 
 // ─────────────────────────────────────────────

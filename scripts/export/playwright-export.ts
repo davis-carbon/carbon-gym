@@ -17,7 +17,7 @@ import path from "path";
 
 const BASE_URL = "https://home.carbontc.co";
 const OUTPUT_DIR = path.resolve(__dirname, "../../data-export");
-const PROFILE_DIR = path.resolve(__dirname, "../../.playwright-profile");
+const PROFILE_DIR = path.resolve(process.env.HOME || "~", ".carbon-gym-playwright-profile");
 
 function ensureDir(dir: string) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
