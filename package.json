@@ -13,7 +13,9 @@
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "export:data": "tsx scripts/export/run-all.ts",
+    "export:playwright": "tsx scripts/export/playwright-export.ts",
     "import:data": "tsx scripts/import/run-all.ts",
+    "import:api": "tsx scripts/import/import-api-data.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
