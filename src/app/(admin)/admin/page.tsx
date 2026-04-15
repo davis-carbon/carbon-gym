@@ -1,30 +1,12 @@
 "use client";
 
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Select } from "@/components/ui/select";
-import { Users, CreditCard, Dumbbell, Package, CreditCardIcon, ClipboardCheck } from "lucide-react";
-
-const KPI_DATA = [
-  { title: "New Accounts", value: 8, subtitle: "This Month", icon: Users, trend: "+3 from last month" },
-  { title: "Failed Payments", value: 2, subtitle: "This Month", icon: CreditCard, trend: "−1 from last month" },
-  { title: "No Logged Workouts", value: 749, subtitle: "Current", icon: Dumbbell, trend: null },
-  { title: "Expiring Package Accounts", value: 33, subtitle: "Next 30 Days", icon: Package, trend: null },
-  { title: "Expiring Card Accounts", value: 0, subtitle: "Next 30 Days", icon: CreditCardIcon, trend: null },
-  { title: "Completed Assessment", value: 29, subtitle: "This Month", icon: ClipboardCheck, trend: "+12 from last month" },
-];
-
-const BREAKDOWN = [
-  { label: "New Leads", count: 0, amount: null },
-  { label: "New Clients", count: 0, amount: null },
-  { label: "New Sales", count: 0, amount: "$0.00" },
-  { label: "Renewals", count: 0, amount: "$0.00" },
-  { label: "Refunds", count: 0, amount: "$0.00" },
-  { label: "Cancellations", count: 0, amount: null },
-  { label: "Failed Payments", count: 0, amount: "$0.00" },
-];
+import { trpc } from "@/trpc/client";
+import { Users, CreditCard, Dumbbell, Package, CreditCardIcon, ClipboardCheck, Loader2 } from "lucide-react";
 
 export default function AdminDashboardPage() {
+  const { data: kpis, isLoading } = trpc.dashboard.kpis.useQuery();
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -35,41 +17,44 @@ export default function AdminDashboardPage() {
             <option>Today</option>
             <option>This Week</option>
             <option>This Month</option>
-            <option>Last 30 Days</option>
-            <option>Last 90 Days</option>
           </select>
           <select className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm text-stone-700 focus:outline-none focus:ring-2 focus:ring-stone-500">
             <option>Compare To</option>
             <option>Previous Period</option>
-            <option>Same Period Last Year</option>
           </select>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-        {/* KPI Cards */}
         <div className="lg:col-span-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {KPI_DATA.map((kpi) => (
-              <Card key={kpi.title}>
-                <CardContent className="pt-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-sm text-stone-500">{kpi.title}</p>
-                      <p className="mt-2 text-3xl font-bold text-stone-900">{kpi.value.toLocaleString()}</p>
-                      <p className="mt-1 text-xs text-stone-400">{kpi.subtitle}</p>
-                    </div>
-                    <div className="rounded-lg bg-stone-100 p-2">
-                      <kpi.icon className="h-5 w-5 text-stone-500" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            <KpiCard
+              title="New Accounts"
+              value={isLoading ? "..." : String(kpis?.newAccounts ?? 0)}
+              subtitle="This Month"
+              icon={Users}
+            />
+            <KpiCard
+              title="Failed Payments"
+              value={isLoading ? "..." : String(kpis?.failedPayments ?? 0)}
+              subtitle="This Month"
+              icon={CreditCard}
+            />
+            <KpiCard
+              title="Expiring Package Accounts"
+              value={isLoading ? "..." : String(kpis?.expiringPackages ?? 0)}
+              subtitle="Next 30 Days"
+              icon={Package}
+            />
+            <KpiCard
+              title="Completed Assessments"
+              value={isLoading ? "..." : String(kpis?.completedAssessments ?? 0)}
+              subtitle="This Month"
+              icon={ClipboardCheck}
+            />
           </div>
         </div>
 
-        {/* Breakdown Panel */}
         <div className="lg:col-span-1">
           <Card>
             <CardContent className="pt-4">
@@ -82,15 +67,21 @@ export default function AdminDashboardPage() {
                 </select>
               </div>
               <div className="space-y-3">
-                {BREAKDOWN.map((item) => (
+                {[
+                  { label: "New Leads", count: 0, amount: null },
+                  { label: "New Clients", count: kpis?.newAccounts ?? 0, amount: null },
+                  { label: "New Sales", count: 0, amount: "$0.00" },
+                  { label: "Renewals", count: 0, amount: "$0.00" },
+                  { label: "Refunds", count: 0, amount: "$0.00" },
+                  { label: "Cancellations", count: 0, amount: null },
+                  { label: "Failed Payments", count: kpis?.failedPayments ?? 0, amount: "$0.00" },
+                ].map((item) => (
                   <div key={item.label} className="flex items-center justify-between text-sm">
                     <div className="flex items-center gap-2">
                       <span className="text-stone-500">{item.count}</span>
                       <span className="text-stone-700">{item.label}</span>
                     </div>
-                    {item.amount && (
-                      <span className="text-stone-900 font-medium">{item.amount}</span>
-                    )}
+                    {item.amount && <span className="text-stone-900 font-medium">{item.amount}</span>}
                   </div>
                 ))}
                 <div className="border-t border-stone-200 pt-3 flex items-center justify-between">
@@ -103,5 +94,24 @@ export default function AdminDashboardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function KpiCard({ title, value, subtitle, icon: Icon }: { title: string; value: string; subtitle: string; icon: React.ComponentType<{ className?: string }> }) {
+  return (
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-sm text-stone-500">{title}</p>
+            <p className="mt-2 text-3xl font-bold text-stone-900">{value}</p>
+            <p className="mt-1 text-xs text-stone-400">{subtitle}</p>
+          </div>
+          <div className="rounded-lg bg-stone-100 p-2">
+            <Icon className="h-5 w-5 text-stone-500" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

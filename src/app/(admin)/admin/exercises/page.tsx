@@ -5,44 +5,36 @@ import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Avatar } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { ExerciseFormModal } from "@/components/admin/exercise-form-modal";
-import { Plus, Pencil, Archive, Video } from "lucide-react";
+import { trpc } from "@/trpc/client";
+import { Plus, Pencil, Archive, Video, Loader2 } from "lucide-react";
 
 interface ExerciseRow {
   id: string;
   name: string;
-  muscleGroup: string;
-  difficulty: string;
-  forceType: string;
-  createdBy: string;
-  hasVideo: boolean;
-  isActive: boolean;
+  muscleGroup: string | null;
+  difficultyLevel: string | null;
+  forceType: string | null;
+  createdBy: string | null;
+  videoUrl: string | null;
   thumbnailUrl: string | null;
-  createdAt: string;
+  isActive: boolean;
+  createdAt: Date;
 }
 
-const MOCK_EXERCISES: ExerciseRow[] = [
-  { id: "1", name: "Cable Abductions", muscleGroup: "Glutes", difficulty: "Intermediate", forceType: "Pull", createdBy: "Mada Hauck", hasVideo: false, isActive: true, thumbnailUrl: null, createdAt: "2026-04-02" },
-  { id: "2", name: "Safety Bar Split Squat (M)", muscleGroup: "Quadriceps", difficulty: "Advanced", forceType: "Push", createdBy: "Aaron Davis", hasVideo: true, isActive: true, thumbnailUrl: null, createdAt: "2024-11-10" },
-  { id: "3", name: "Safety Bar Reverse Lunge (M)", muscleGroup: "Quadriceps", difficulty: "Advanced", forceType: "Push", createdBy: "Madeline Gladu", hasVideo: true, isActive: true, thumbnailUrl: null, createdAt: "2026-04-01" },
-  { id: "4", name: "Supported Safety Bar Squat (M)", muscleGroup: "Quadriceps", difficulty: "Intermediate", forceType: "Push", createdBy: "Madeline Gladu", hasVideo: true, isActive: true, thumbnailUrl: null, createdAt: "2026-04-01" },
-  { id: "5", name: "Safety Bar Squat (M)", muscleGroup: "Quadriceps", difficulty: "Advanced", forceType: "Push", createdBy: "Madeline Gladu", hasVideo: true, isActive: true, thumbnailUrl: null, createdAt: "2026-04-01" },
-  { id: "6", name: "Barbell Back Squat", muscleGroup: "Quadriceps", difficulty: "Advanced", forceType: "Push", createdBy: "Aaron Davis", hasVideo: true, isActive: true, thumbnailUrl: null, createdAt: "2024-05-15" },
-  { id: "7", name: "Romanian Deadlift", muscleGroup: "Hamstrings", difficulty: "Intermediate", forceType: "Pull", createdBy: "Aaron Davis", hasVideo: true, isActive: true, thumbnailUrl: null, createdAt: "2024-05-15" },
-  { id: "8", name: "Bench Press", muscleGroup: "Chest", difficulty: "Intermediate", forceType: "Push", createdBy: "Mada Hauck", hasVideo: true, isActive: true, thumbnailUrl: null, createdAt: "2024-06-01" },
-  { id: "9", name: "Pull Up", muscleGroup: "Back", difficulty: "Advanced", forceType: "Pull", createdBy: "Aaron Davis", hasVideo: true, isActive: true, thumbnailUrl: null, createdAt: "2024-06-01" },
-  { id: "10", name: "Dumbbell Shoulder Press", muscleGroup: "Shoulders", difficulty: "Beginner", forceType: "Push", createdBy: "Bri Larson", hasVideo: true, isActive: true, thumbnailUrl: null, createdAt: "2024-07-01" },
-  { id: "11", name: "Kettlebell Swing", muscleGroup: "Full Body", difficulty: "Intermediate", forceType: "Dynamic", createdBy: "Aaron Davis", hasVideo: true, isActive: true, thumbnailUrl: null, createdAt: "2024-08-01" },
-  { id: "12", name: "Plank", muscleGroup: "Core", difficulty: "Beginner", forceType: "Static", createdBy: "Bri Larson", hasVideo: false, isActive: true, thumbnailUrl: null, createdAt: "2024-08-15" },
-];
-
 const difficultyVariant: Record<string, "success" | "warning" | "danger" | "info"> = {
-  Beginner: "success",
-  Intermediate: "warning",
-  Advanced: "danger",
-  Expert: "info",
+  BEGINNER: "success",
+  INTERMEDIATE: "warning",
+  ADVANCED: "danger",
+  EXPERT: "info",
+};
+
+const muscleLabels: Record<string, string> = {
+  CHEST: "Chest", BACK: "Back", SHOULDERS: "Shoulders", BICEPS: "Biceps",
+  TRICEPS: "Triceps", FOREARMS: "Forearms", QUADRICEPS: "Quadriceps",
+  HAMSTRINGS: "Hamstrings", GLUTES: "Glutes", CALVES: "Calves",
+  CORE: "Core", ABS: "Abs", FULL_BODY: "Full Body", CARDIO: "Cardio", OTHER: "Other",
 };
 
 const columns: ColumnDef<ExerciseRow, unknown>[] = [
@@ -52,7 +44,7 @@ const columns: ColumnDef<ExerciseRow, unknown>[] = [
     cell: ({ row }) => (
       <div className="flex items-center gap-3">
         <div className="h-10 w-10 rounded-lg bg-stone-100 flex items-center justify-center flex-shrink-0">
-          {row.original.hasVideo ? (
+          {row.original.videoUrl ? (
             <Video className="h-4 w-4 text-stone-400" />
           ) : (
             <span className="text-xs font-bold text-stone-400">
@@ -64,21 +56,41 @@ const columns: ColumnDef<ExerciseRow, unknown>[] = [
       </div>
     ),
   },
-  { accessorKey: "muscleGroup", header: "Muscle Group" },
   {
-    accessorKey: "difficulty",
-    header: "Difficulty",
+    accessorKey: "muscleGroup",
+    header: "Muscle Group",
     cell: ({ getValue }) => {
-      const v = getValue() as string;
-      return <Badge variant={difficultyVariant[v] || "outline"}>{v}</Badge>;
+      const v = getValue() as string | null;
+      return v ? (muscleLabels[v] || v) : "—";
     },
   },
-  { accessorKey: "forceType", header: "Force Type" },
-  { accessorKey: "createdBy", header: "Created By" },
   {
-    accessorKey: "hasVideo",
+    accessorKey: "difficultyLevel",
+    header: "Difficulty",
+    cell: ({ getValue }) => {
+      const v = getValue() as string | null;
+      if (!v) return "—";
+      const label = v.charAt(0) + v.slice(1).toLowerCase();
+      return <Badge variant={difficultyVariant[v] || "outline"}>{label}</Badge>;
+    },
+  },
+  {
+    accessorKey: "forceType",
+    header: "Force Type",
+    cell: ({ getValue }) => {
+      const v = getValue() as string | null;
+      return v ? v.charAt(0) + v.slice(1).toLowerCase() : "—";
+    },
+  },
+  {
+    accessorKey: "createdBy",
+    header: "Created By",
+    cell: ({ getValue }) => (getValue() as string) || "—",
+  },
+  {
+    accessorKey: "videoUrl",
     header: "Video",
-    cell: ({ getValue }) => (getValue() as boolean) ? <Badge variant="info">Yes</Badge> : <span className="text-stone-400">—</span>,
+    cell: ({ getValue }) => (getValue() as string) ? <Badge variant="info">Yes</Badge> : <span className="text-stone-400">—</span>,
   },
   {
     accessorKey: "createdAt",
@@ -102,6 +114,21 @@ const columns: ColumnDef<ExerciseRow, unknown>[] = [
 export default function ExercisesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  const { data, isLoading } = trpc.exercises.list.useQuery({ limit: 200 });
+
+  const exerciseRows: ExerciseRow[] = (data?.exercises ?? []).map((e) => ({
+    id: e.id,
+    name: e.name,
+    muscleGroup: e.muscleGroup,
+    difficultyLevel: e.difficultyLevel,
+    forceType: e.forceType,
+    createdBy: e.createdBy ? `${e.createdBy.firstName} ${e.createdBy.lastName}` : null,
+    videoUrl: e.videoUrl,
+    thumbnailUrl: e.thumbnailUrl,
+    isActive: e.isActive,
+    createdAt: e.createdAt,
+  }));
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -111,11 +138,18 @@ export default function ExercisesPage() {
         </Button>
       </div>
       <div className="rounded-xl border border-stone-200 bg-white p-6">
-        <DataTable
-          data={MOCK_EXERCISES}
-          columns={columns}
-          searchPlaceholder="Search exercises..."
-        />
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-stone-400" />
+            <span className="ml-2 text-sm text-stone-500">Loading exercises...</span>
+          </div>
+        ) : (
+          <DataTable
+            data={exerciseRows}
+            columns={columns}
+            searchPlaceholder="Search exercises..."
+          />
+        )}
       </div>
 
       <ExerciseFormModal

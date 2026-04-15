@@ -5,27 +5,18 @@ import { DataTable } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
-import { Plus, Pencil, Copy, Archive } from "lucide-react";
+import { trpc } from "@/trpc/client";
+import { Plus, Pencil, Copy, Archive, Loader2 } from "lucide-react";
 
 interface PlanRow {
   id: string;
   name: string;
   sizeWeeks: number;
   status: string;
-  createdBy: string;
-  createdAt: string;
+  createdBy: string | null;
+  assignmentCount: number;
+  createdAt: Date;
 }
-
-const MOCK_PLANS: PlanRow[] = [
-  { id: "1", name: "ORIGIN Post-Assessment", sizeWeeks: 4, status: "DRAFT", createdBy: "Brandon Sherwood", createdAt: "2026-02-06" },
-  { id: "2", name: "ORIGIN Pre-Assessment", sizeWeeks: 4, status: "DRAFT", createdBy: "Brandon Sherwood", createdAt: "2026-02-06" },
-  { id: "3", name: "Nutrition - Weekly Check In [M]", sizeWeeks: 4, status: "ASSIGNED", createdBy: "Bri Larson", createdAt: "2025-11-07" },
-  { id: "4", name: "Nutrition - Weekly Check In [F]", sizeWeeks: 4, status: "ASSIGNED", createdBy: "Bri Larson", createdAt: "2025-11-07" },
-  { id: "5", name: "At Home", sizeWeeks: 4, status: "DRAFT", createdBy: "Bri Larson", createdAt: "2026-02-13" },
-  { id: "6", name: "Strength Foundations A", sizeWeeks: 6, status: "PUBLISHED", createdBy: "Aaron Davis", createdAt: "2024-09-01" },
-  { id: "7", name: "Hypertrophy Block B", sizeWeeks: 4, status: "PUBLISHED", createdBy: "Mada Hauck", createdAt: "2025-01-15" },
-  { id: "8", name: "Rehab — Knee Protocol", sizeWeeks: 8, status: "ASSIGNED", createdBy: "Madeline Gladu", createdAt: "2025-06-10" },
-];
 
 const statusVariant: Record<string, "outline" | "success" | "info" | "warning"> = {
   DRAFT: "outline",
@@ -40,13 +31,13 @@ const columns: ColumnDef<PlanRow, unknown>[] = [
   {
     accessorKey: "status",
     header: "Status",
-    cell: ({ getValue }) => {
-      const v = getValue() as string;
-      const label = v === "ASSIGNED" ? `Assigned` : v.charAt(0) + v.slice(1).toLowerCase();
+    cell: ({ row }) => {
+      const v = row.original.status;
+      const label = v === "ASSIGNED" ? `Assigned — ${row.original.assignmentCount} clients` : v.charAt(0) + v.slice(1).toLowerCase();
       return <Badge variant={statusVariant[v] || "outline"}>{label}</Badge>;
     },
   },
-  { accessorKey: "createdBy", header: "Created By" },
+  { accessorKey: "createdBy", header: "Created By", cell: ({ getValue }) => (getValue() as string) || "—" },
   {
     accessorKey: "createdAt",
     header: "Created",
@@ -68,6 +59,18 @@ const columns: ColumnDef<PlanRow, unknown>[] = [
 ];
 
 export default function PlansPage() {
+  const { data, isLoading } = trpc.plans.list.useQuery();
+
+  const planRows: PlanRow[] = (data ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    sizeWeeks: p.sizeWeeks,
+    status: p.status,
+    createdBy: p.createdBy ? `${p.createdBy.firstName} ${p.createdBy.lastName}` : null,
+    assignmentCount: p._count.assignments,
+    createdAt: p.createdAt,
+  }));
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -78,11 +81,14 @@ export default function PlansPage() {
         </div>
       </div>
       <div className="rounded-xl border border-stone-200 bg-white p-6">
-        <DataTable
-          data={MOCK_PLANS}
-          columns={columns}
-          searchPlaceholder="Search plans..."
-        />
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-stone-400" />
+            <span className="ml-2 text-sm text-stone-500">Loading plans...</span>
+          </div>
+        ) : (
+          <DataTable data={planRows} columns={columns} searchPlaceholder="Search plans..." />
+        )}
       </div>
     </div>
   );
