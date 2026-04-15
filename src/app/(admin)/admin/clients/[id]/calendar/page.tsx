@@ -1,66 +1,17 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, useMemo } from "react";
 import Link from "next/link";
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isSameDay, isToday } from "date-fns";
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Download, Eye } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, startOfWeek, endOfWeek, addMonths, subMonths, isSameMonth, isToday } from "date-fns";
+import { ChevronLeft, ChevronRight, Plus, Download, Eye, Loader2 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-
-// Mock workout data for the calendar
-const MOCK_WORKOUTS: Record<string, { id: string; title: string; completed: boolean; blocks: { name: string; exercises: { name: string; sets: string; detail: string }[] }[] }[]> = {
-  "2026-04-14": [
-    {
-      id: "w1", title: "Aerobic", completed: false,
-      blocks: [
-        { name: "Block A", exercises: [{ name: "Run / Walk / Bike", sets: "1 Sets", detail: "00:00:00" }] },
-        { name: "Block B", exercises: [{ name: "Accel Build up", sets: "6 Sets", detail: "0 reps, 01:30 rest" }] },
-      ],
-    },
-  ],
-  "2026-04-15": [
-    {
-      id: "w2", title: "Aerobic", completed: false,
-      blocks: [
-        { name: "Block A", exercises: [{ name: "Run/Walk", sets: "1 Sets", detail: "00:00:00" }] },
-        { name: "Block B", exercises: [{ name: "Aerobic Power Intervals", sets: "4 Sets", detail: "00:04:00, 04:00 rest" }] },
-      ],
-    },
-  ],
-  "2026-04-16": [
-    {
-      id: "w3", title: "Aerobic", completed: false,
-      blocks: [
-        { name: "Block A", exercises: [{ name: "Run/Walk", sets: "1 Sets", detail: "00:00:00" }] },
-      ],
-    },
-  ],
-  "2026-04-17": [
-    {
-      id: "w4", title: "Aerobic", completed: false,
-      blocks: [
-        { name: "Block A", exercises: [{ name: "Run/Walk", sets: "1 Sets", detail: "00:00:00" }] },
-        { name: "Block B", exercises: [{ name: "Threshold Run", sets: "1 Sets", detail: "0 mi, 00:25:00" }] },
-      ],
-    },
-  ],
-  "2026-04-18": [
-    {
-      id: "w5", title: "Aerobic", completed: false,
-      blocks: [
-        { name: "Block A", exercises: [{ name: "C2 Bike", sets: "1 Sets", detail: "00:00:00" }] },
-        { name: "Block B", exercises: [{ name: "Run/Walk", sets: "1 Sets", detail: "00:00:00" }] },
-      ],
-    },
-  ],
-};
-
-const MOCK_CLIENT = { firstName: "Miguel", lastName: "Garza" };
+import { trpc } from "@/trpc/client";
+import { useToast } from "@/components/ui/toast";
 
 export default function ClientWorkoutCalendarPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [currentMonth, setCurrentMonth] = useState(new Date(2026, 3, 1)); // April 2026
+  const { toast } = useToast();
+  const [currentMonth, setCurrentMonth] = useState(new Date());
   const [viewMode, setViewMode] = useState<"month" | "day">("month");
 
   const monthStart = startOfMonth(currentMonth);
@@ -68,8 +19,48 @@ export default function ClientWorkoutCalendarPage({ params }: { params: Promise<
   const calendarStart = startOfWeek(monthStart);
   const calendarEnd = endOfWeek(monthEnd);
   const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
-
   const dayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+  // Fetch client info
+  const { data: client } = trpc.clients.byId.useQuery({ id });
+
+  // Fetch workouts for the visible date range
+  const { data: workouts, isLoading } = trpc.workouts.listByClientAndDateRange.useQuery({
+    clientId: id,
+    startDate: calendarStart,
+    endDate: calendarEnd,
+  });
+
+  // Create workout mutation
+  const utils = trpc.useUtils();
+  const createWorkout = trpc.workouts.create.useMutation({
+    onSuccess: () => {
+      utils.workouts.listByClientAndDateRange.invalidate();
+      toast("success", "Workout created");
+    },
+    onError: (err) => toast("error", err.message),
+  });
+
+  // Group workouts by date key
+  const workoutsByDate = useMemo(() => {
+    const map: Record<string, typeof workouts> = {};
+    for (const w of workouts ?? []) {
+      const key = format(new Date(w.date), "yyyy-MM-dd");
+      if (!map[key]) map[key] = [];
+      map[key]!.push(w);
+    }
+    return map;
+  }, [workouts]);
+
+  const clientName = client ? `${client.firstName} ${client.lastName}` : "Loading...";
+
+  function handleAddWorkout(date: Date) {
+    createWorkout.mutate({
+      clientId: id,
+      title: "Workout",
+      date,
+    });
+  }
 
   return (
     <div className="min-h-screen bg-white">
@@ -77,14 +68,12 @@ export default function ClientWorkoutCalendarPage({ params }: { params: Promise<
       <div className="border-b border-stone-200 px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Avatar name={`${MOCK_CLIENT.firstName} ${MOCK_CLIENT.lastName}`} size="sm" />
+            <Avatar name={clientName} size="sm" />
             <div>
               <h1 className="text-lg font-bold">
-                {format(currentMonth, "MMM yyyy")} <span className="font-normal text-stone-600">{MOCK_CLIENT.firstName} {MOCK_CLIENT.lastName}</span>
+                {format(currentMonth, "MMM yyyy")} <span className="font-normal text-stone-600">{clientName}</span>
               </h1>
               <div className="flex items-center gap-2 text-xs text-stone-500">
-                <Link href={`/admin/clients/${id}`} className="hover:underline">Change Client</Link>
-                <span>/</span>
                 <Link href={`/admin/clients/${id}`} className="hover:underline">Manage</Link>
               </div>
             </div>
@@ -106,19 +95,24 @@ export default function ClientWorkoutCalendarPage({ params }: { params: Promise<
         </div>
       </div>
 
+      {isLoading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-stone-400" />
+          <span className="ml-2 text-sm text-stone-500">Loading workouts...</span>
+        </div>
+      )}
+
       {/* Calendar Grid */}
       <div className="grid grid-cols-7">
-        {/* Day headers */}
         {dayNames.map((day) => (
           <div key={day} className="border-b border-r border-stone-200 px-2 py-2 text-xs font-medium text-stone-500 text-center">
             {day}
           </div>
         ))}
 
-        {/* Day cells */}
         {days.map((day) => {
           const dateKey = format(day, "yyyy-MM-dd");
-          const workouts = MOCK_WORKOUTS[dateKey] || [];
+          const dayWorkouts = workoutsByDate[dateKey] || [];
           const inMonth = isSameMonth(day, currentMonth);
           const today = isToday(day);
 
@@ -127,50 +121,51 @@ export default function ClientWorkoutCalendarPage({ params }: { params: Promise<
               key={dateKey}
               className={`border-b border-r border-stone-200 min-h-[140px] ${!inMonth ? "bg-stone-50" : ""}`}
             >
-              {/* Day header */}
               <div className="flex items-center justify-between px-2 pt-1">
-                <button className="text-stone-400 hover:text-stone-600 text-xs">
+                <button
+                  onClick={() => handleAddWorkout(day)}
+                  className="text-stone-400 hover:text-stone-600 text-xs"
+                  title="Add workout"
+                >
                   <Plus className="h-3 w-3" />
                 </button>
                 <span className={`text-xs ${today ? "bg-stone-900 text-white rounded-full w-5 h-5 flex items-center justify-center" : inMonth ? "text-stone-600" : "text-stone-300"}`}>
                   {format(day, "d")}
                 </span>
-                {workouts.length > 0 && (
-                  <button className="text-stone-400 hover:text-stone-600 text-xs">⋮</button>
-                )}
-                {workouts.length === 0 && <span className="w-3" />}
+                <span className="w-3" />
               </div>
 
-              {/* Workouts */}
               <div className="px-1 pb-1 space-y-1">
-                {workouts.map((workout) => (
+                {dayWorkouts.map((workout) => (
                   <Link
                     key={workout.id}
                     href={`/admin/clients/${id}/calendar/workout/${workout.id}`}
                     className="block"
                   >
-                    <div className={`rounded p-1.5 text-xs ${workout.completed ? "bg-emerald-50 border border-emerald-200" : "bg-stone-50 border border-stone-200"} hover:border-stone-400 transition-colors cursor-pointer`}>
-                      {/* Status + Title */}
-                      <div className="flex items-center gap-1 mb-1">
-                        <span className={`w-2 h-2 rounded-full ${workout.completed ? "bg-emerald-500" : "border border-stone-400"}`} />
-                        <span className={`font-medium ${workout.completed ? "text-emerald-700" : "text-stone-700"}`}>
+                    <div className={`rounded p-1.5 text-xs ${workout.isCompleted ? "bg-emerald-50 border border-emerald-200" : "bg-stone-50 border border-stone-200"} hover:border-stone-400 transition-colors cursor-pointer`}>
+                      <div className="flex items-center gap-1 mb-0.5">
+                        <span className={`w-2 h-2 rounded-full ${workout.isCompleted ? "bg-emerald-500" : "border border-stone-400"}`} />
+                        <span className={`font-medium ${workout.isCompleted ? "text-emerald-700" : "text-stone-700"}`}>
                           {workout.title}
                         </span>
                       </div>
 
-                      {/* Blocks + Exercises */}
-                      {workout.blocks.map((block, bi) => (
-                        <div key={bi} className="mt-0.5">
+                      {workout.blocks.map((block) => (
+                        <div key={block.id} className="mt-0.5">
                           <p className="font-semibold text-stone-600 text-[10px]">{block.name}</p>
                           {block.exercises.map((ex, ei) => (
-                            <div key={ei} className="ml-1 text-[10px] text-stone-500">
-                              <span className="text-stone-400">{String.fromCharCode(65 + bi)}{ei + 1}</span>{" "}
-                              <span>{ex.name}</span>
-                              <p className="ml-3 text-stone-400">{ex.sets}, {ex.detail}</p>
+                            <div key={ex.id} className="ml-1 text-[10px] text-stone-500">
+                              <span className="text-stone-400">{block.name.replace("Block ", "")}{ei + 1}</span>{" "}
+                              <span>{ex.exercise.name}</span>
+                              <p className="ml-3 text-stone-400">{ex.sets.length} Sets</p>
                             </div>
                           ))}
                         </div>
                       ))}
+
+                      {workout.blocks.length === 0 && (
+                        <p className="text-[10px] text-stone-400 italic">Empty — click to add exercises</p>
+                      )}
                     </div>
                   </Link>
                 ))}

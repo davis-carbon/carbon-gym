@@ -2,22 +2,12 @@
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus } from "lucide-react";
-
-const MOCK_SERVICES = [
-  { id: "1", name: "Discovery Call", type: "Appointment", duration: 20, category: "", createdAt: "2026-04-09" },
-  { id: "2", name: "Gym Tour", type: "Appointment", duration: 30, category: "", createdAt: "2025-07-15" },
-  { id: "3", name: "Semi-Private Training", type: "Class", duration: 60, category: "", createdAt: "2025-08-04" },
-  { id: "4", name: "1-on-1", type: "Appointment", duration: 60, category: "", createdAt: "2023-10-31" },
-  { id: "5", name: "Nutrition Program Check-In Call", type: "Appointment", duration: 30, category: "", createdAt: "2023-11-01" },
-  { id: "6", name: "Initial Evaluation", type: "Appointment", duration: 90, category: "", createdAt: "2024-01-15" },
-  { id: "7", name: "30-Minute Bodywork", type: "Appointment", duration: 30, category: "", createdAt: "2024-03-01" },
-  { id: "8", name: "60 Minute Restorative Massage", type: "Appointment", duration: 60, category: "", createdAt: "2024-03-01" },
-  { id: "9", name: "90 Minute Restorative", type: "Appointment", duration: 90, category: "", createdAt: "2024-06-15" },
-  { id: "10", name: "Therapy", type: "Appointment", duration: 60, category: "", createdAt: "2024-08-01" },
-];
+import { trpc } from "@/trpc/client";
+import { Plus, Loader2 } from "lucide-react";
 
 export default function ServicesPage() {
+  const { data: services, isLoading } = trpc.schedule.services.list.useQuery();
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -39,15 +29,21 @@ export default function ServicesPage() {
             </tr>
           </thead>
           <tbody>
-            {MOCK_SERVICES.map((svc) => (
-              <tr key={svc.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 cursor-pointer transition-colors">
-                <td className="px-4 py-3 font-medium">{svc.name}</td>
-                <td className="px-4 py-3"><Badge variant={svc.type === "Class" ? "info" : "outline"}>{svc.type}</Badge></td>
-                <td className="px-4 py-3">{svc.duration} min</td>
-                <td className="px-4 py-3 text-stone-500">{svc.category || "—"}</td>
-                <td className="px-4 py-3 text-stone-500">{new Date(svc.createdAt).toLocaleDateString()}</td>
-              </tr>
-            ))}
+            {isLoading ? (
+              <tr><td colSpan={5} className="px-4 py-12 text-center"><Loader2 className="h-5 w-5 animate-spin text-stone-400 mx-auto" /></td></tr>
+            ) : (services ?? []).length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-12 text-center text-stone-400">No services found.</td></tr>
+            ) : (
+              (services ?? []).map((svc) => (
+                <tr key={svc.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50 cursor-pointer transition-colors">
+                  <td className="px-4 py-3 font-medium">{svc.name}</td>
+                  <td className="px-4 py-3"><Badge variant={svc.type === "CLASS" ? "info" : "outline"}>{svc.type === "CLASS" ? "Class" : "Appointment"}</Badge></td>
+                  <td className="px-4 py-3">{svc.durationMinutes} min</td>
+                  <td className="px-4 py-3 text-stone-500">{svc.category?.name || "—"}</td>
+                  <td className="px-4 py-3 text-stone-500">{new Date(svc.createdAt).toLocaleDateString()}</td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>

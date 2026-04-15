@@ -2,165 +2,90 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, GripVertical, Play, History, Star, Pill, ChevronUp, Search } from "lucide-react";
+import { Plus, Trash2, GripVertical, Play, History, Star, Pill, ChevronUp, Search, Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-
-interface ExerciseSet {
-  id: string;
-  setNumber: number;
-  reps: number | null;
-  weight: number | null;
-  time: string | null; // "00:00:00"
-  distance: number | null;
-  calories: number | null;
-}
-
-interface BlockExercise {
-  id: string;
-  name: string;
-  sets: ExerciseSet[];
-  notes: string;
-  restMM: string;
-  restSS: string;
-  overrideCalories: number | null;
-  showReps: boolean;
-  showWeight: boolean;
-  showTime: boolean;
-  showDistance: boolean;
-}
-
-interface WorkoutBlock {
-  id: string;
-  name: string;
-  blockType: string;
-  exercises: BlockExercise[];
-}
-
-// Initial mock workout
-const initialBlocks: WorkoutBlock[] = [
-  {
-    id: "b1",
-    name: "Block A",
-    blockType: "Normal",
-    exercises: [
-      {
-        id: "e1", name: "Run / Walk / Bike",
-        sets: [{ id: "s1", setNumber: 1, reps: null, weight: null, time: "00:00:00", distance: null, calories: 350 }],
-        notes: "", restMM: "", restSS: "", overrideCalories: null,
-        showReps: false, showWeight: false, showTime: true, showDistance: false,
-      },
-    ],
-  },
-  {
-    id: "b2",
-    name: "Block B",
-    blockType: "Normal",
-    exercises: [
-      {
-        id: "e2", name: "Accel Build up",
-        sets: [
-          { id: "s2", setNumber: 1, reps: 0, weight: null, time: null, distance: 50, calories: null },
-          { id: "s3", setNumber: 2, reps: 0, weight: null, time: null, distance: 50, calories: null },
-          { id: "s4", setNumber: 3, reps: 0, weight: null, time: null, distance: 50, calories: null },
-          { id: "s5", setNumber: 4, reps: 0, weight: null, time: null, distance: 50, calories: null },
-          { id: "s6", setNumber: 5, reps: 0, weight: null, time: null, distance: 50, calories: null },
-          { id: "s7", setNumber: 6, reps: 0, weight: null, time: null, distance: 50, calories: null },
-        ],
-        notes: "", restMM: "01", restSS: "30", overrideCalories: null,
-        showReps: true, showWeight: false, showTime: false, showDistance: true,
-      },
-    ],
-  },
-];
+import { trpc } from "@/trpc/client";
+import { useToast } from "@/components/ui/toast";
 
 export default function WorkoutEditorPage({ params }: { params: Promise<{ id: string; workoutId: string }> }) {
   const { id, workoutId } = use(params);
-  const [blocks, setBlocks] = useState<WorkoutBlock[]>(initialBlocks);
-  const [title, setTitle] = useState("Aerobic");
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
+
   const [exerciseSearch, setExerciseSearch] = useState("");
   const [useMetric, setUseMetric] = useState(false);
-  const [autofillEmpty, setAutofillEmpty] = useState(false);
 
-  function addBlock() {
-    const letter = String.fromCharCode(65 + blocks.length);
-    setBlocks([...blocks, {
-      id: crypto.randomUUID(),
-      name: `Block ${letter}`,
-      blockType: "Normal",
-      exercises: [],
-    }]);
+  // Fetch workout data
+  const { data: workout, isLoading } = trpc.workouts.byId.useQuery({ id: workoutId });
+
+  // Search exercises
+  const { data: searchResults } = trpc.workouts.searchExercises.useQuery(
+    { query: exerciseSearch, limit: 15 },
+    { enabled: exerciseSearch.length >= 2 }
+  );
+
+  // Mutations
+  const addBlock = trpc.workouts.addBlock.useMutation({
+    onSuccess: () => { utils.workouts.byId.invalidate({ id: workoutId }); toast("success", "Block added"); },
+  });
+
+  const deleteBlock = trpc.workouts.deleteBlock.useMutation({
+    onSuccess: () => { utils.workouts.byId.invalidate({ id: workoutId }); },
+  });
+
+  const addExercise = trpc.workouts.addExerciseToBlock.useMutation({
+    onSuccess: () => { utils.workouts.byId.invalidate({ id: workoutId }); setExerciseSearch(""); },
+  });
+
+  const addSet = trpc.workouts.addSet.useMutation({
+    onSuccess: () => { utils.workouts.byId.invalidate({ id: workoutId }); },
+  });
+
+  const removeExercise = trpc.workouts.removeExercise.useMutation({
+    onSuccess: () => { utils.workouts.byId.invalidate({ id: workoutId }); },
+  });
+
+  const updateWorkout = trpc.workouts.update.useMutation({
+    onSuccess: () => { utils.workouts.byId.invalidate({ id: workoutId }); },
+  });
+
+  const deleteWorkout = trpc.workouts.delete.useMutation({
+    onSuccess: () => { window.location.href = `/admin/clients/${id}/calendar`; },
+  });
+
+  if (isLoading || !workout) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-6 w-6 animate-spin text-stone-400" />
+        <span className="ml-2 text-sm text-stone-500">Loading workout...</span>
+      </div>
+    );
   }
 
-  function deleteBlock(blockId: string) {
-    setBlocks(blocks.filter(b => b.id !== blockId));
-  }
+  const clientName = `${workout.client.firstName} ${workout.client.lastName}`;
+  const totalSets = workout.blocks.reduce((acc, b) => acc + b.exercises.reduce((a, e) => a + e.sets.length, 0), 0);
 
-  function addSet(blockId: string, exerciseId: string) {
-    setBlocks(blocks.map(b => {
-      if (b.id !== blockId) return b;
-      return {
-        ...b,
-        exercises: b.exercises.map(e => {
-          if (e.id !== exerciseId) return e;
-          return {
-            ...e,
-            sets: [...e.sets, {
-              id: crypto.randomUUID(),
-              setNumber: e.sets.length + 1,
-              reps: e.showReps ? 0 : null,
-              weight: e.showWeight ? 0 : null,
-              time: e.showTime ? "00:00:00" : null,
-              distance: e.showDistance ? 0 : null,
-              calories: null,
-            }],
-          };
-        }),
-      };
-    }));
+  function handleAddExerciseToBlock(blockId: string, exerciseId: string) {
+    addExercise.mutate({
+      blockId,
+      exerciseId,
+      sets: [{ setNumber: 1, reps: null, weight: null, time: null, distance: null, calories: null }],
+    });
   }
-
-  function toggleSetField(blockId: string, exerciseId: string, field: "showReps" | "showWeight" | "showTime" | "showDistance") {
-    setBlocks(blocks.map(b => {
-      if (b.id !== blockId) return b;
-      return {
-        ...b,
-        exercises: b.exercises.map(e => {
-          if (e.id !== exerciseId) return e;
-          return { ...e, [field]: !e[field] };
-        }),
-      };
-    }));
-  }
-
-  // Calculate totals
-  const totalSets = blocks.reduce((acc, b) => acc + b.exercises.reduce((a, e) => a + e.sets.length, 0), 0);
 
   return (
     <div className="min-h-screen bg-white">
       {/* Stats bar */}
       <div className="bg-stone-900 text-white px-6 py-3 flex items-center justify-between">
-        <span className="text-sm font-medium">This workout</span>
+        <div className="flex items-center gap-4">
+          <Link href={`/admin/clients/${id}/calendar`} className="text-stone-400 hover:text-white">
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+          <span className="text-sm font-medium">This workout</span>
+        </div>
         <div className="flex items-center gap-8 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-stone-400">⏱</span>
-            <span className="text-2xl font-light">00:00:00</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-stone-400">🏋️</span>
-            <span className="text-2xl font-light">0</span>
-            <span className="text-stone-400">lbs</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-stone-400">🏃</span>
-            <span className="text-2xl font-light">0</span>
-            <span className="text-stone-400">mi</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-stone-400">#</span>
-            <span className="text-2xl font-light">0</span>
-            <span className="text-stone-400">reps</span>
-          </div>
+          <div><span className="text-2xl font-light">{totalSets}</span> <span className="text-stone-400">sets</span></div>
+          <div><span className="text-2xl font-light">{workout.blocks.length}</span> <span className="text-stone-400">blocks</span></div>
         </div>
       </div>
 
@@ -179,7 +104,7 @@ export default function WorkoutEditorPage({ params }: { params: Promise<{ id: st
 
           <div>
             <p className="text-xs text-stone-500 mb-1">Selected Workout</p>
-            <p className="text-sm font-semibold">{title}</p>
+            <p className="text-sm font-semibold">{workout.title}</p>
           </div>
 
           {/* Exercise search */}
@@ -192,10 +117,37 @@ export default function WorkoutEditorPage({ params }: { params: Promise<{ id: st
               placeholder="Add Exercise"
               className="w-full rounded-lg border border-stone-300 pl-10 pr-3 py-2 text-sm placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-500"
             />
+            {/* Search results dropdown */}
+            {exerciseSearch.length >= 2 && searchResults && searchResults.length > 0 && (
+              <div className="absolute z-50 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                {searchResults.map((ex) => (
+                  <button
+                    key={ex.id}
+                    onClick={() => {
+                      // Add to first block, or create one if none exist
+                      if (workout.blocks.length === 0) {
+                        addBlock.mutate({ workoutId }, {
+                          onSuccess: (newBlock) => {
+                            handleAddExerciseToBlock(newBlock.id, ex.id);
+                          },
+                        });
+                      } else {
+                        handleAddExerciseToBlock(workout.blocks[0].id, ex.id);
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-stone-50 border-b border-stone-100 last:border-0"
+                  >
+                    <span className="font-medium">{ex.name}</span>
+                    {ex.muscleGroup && <span className="text-xs text-stone-400 ml-2">{ex.muscleGroup}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <button
-            onClick={addBlock}
+            onClick={() => addBlock.mutate({ workoutId })}
+            disabled={addBlock.isPending}
             className="text-sm text-stone-500 hover:text-stone-700"
           >
             + Add Block
@@ -207,76 +159,66 @@ export default function WorkoutEditorPage({ params }: { params: Promise<{ id: st
               Favorite Exercises <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
             </p>
             <p className="text-xs text-stone-400 mt-1">
-              No favorited exercises, yet. After adding a(n) exercise to a workout, you can click the star icon to add it as a favorite.
+              Search and add exercises above.
             </p>
           </div>
 
-          {/* Recent Exercises */}
-          <div>
-            <p className="text-sm font-semibold">Recent Exercises</p>
-            <div className="mt-2 space-y-1 text-xs text-stone-600">
-              <p className="cursor-pointer hover:text-stone-900">Run / Walk / Bike</p>
-              <p className="cursor-pointer hover:text-stone-900">Accel Build up</p>
-              <p className="cursor-pointer hover:text-stone-900">Aerobic Power Intervals</p>
-              <p className="cursor-pointer hover:text-stone-900">Threshold Run</p>
-              <p className="cursor-pointer hover:text-stone-900">C2 Bike</p>
-            </div>
-          </div>
+          {/* Delete workout */}
+          <button
+            onClick={() => { if (confirm("Delete this workout?")) deleteWorkout.mutate({ id: workoutId }); }}
+            className="text-xs text-red-500 hover:text-red-700"
+          >
+            Delete Workout
+          </button>
         </div>
 
         {/* Right panel — Workout Builder */}
         <div className="flex-1 p-6">
-          {/* Workout header */}
           <div className="mb-4">
             <p className="text-sm text-stone-500">
-              Workout for <span className="font-semibold text-stone-900">Miguel Garza</span> on Monday, Mar 30 2:44pm
+              Workout for <span className="font-semibold text-stone-900">{clientName}</span> on {new Date(workout.date).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
             </p>
-            <div className="flex items-center gap-2 mt-1">
-              <h2 className="text-lg font-semibold">{title}</h2>
-              <button className="text-xs text-stone-400 hover:text-stone-600">edit</button>
-            </div>
+            <h2 className="text-lg font-semibold mt-1">{workout.title}</h2>
           </div>
 
-          {/* Metric / Autofill toggles */}
           <div className="flex items-center gap-6 mb-4 text-xs text-stone-500">
             <label className="flex items-center gap-1.5 cursor-pointer">
               <input type="checkbox" checked={useMetric} onChange={() => setUseMetric(!useMetric)} className="rounded border-stone-300" />
               USE METRIC?
             </label>
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input type="checkbox" checked={autofillEmpty} onChange={() => setAutofillEmpty(!autofillEmpty)} className="rounded border-stone-300" />
-              AUTOFILL EMPTY?
-            </label>
           </div>
 
           {/* Blocks */}
           <div className="space-y-6">
-            {blocks.map((block, blockIndex) => (
+            {workout.blocks.length === 0 && (
+              <div className="text-center py-12 border-2 border-dashed border-stone-200 rounded-lg">
+                <p className="text-stone-400 mb-3">No blocks yet. Add a block to start building.</p>
+                <Button size="sm" onClick={() => addBlock.mutate({ workoutId })}>
+                  <Plus className="h-4 w-4" /> Add Block
+                </Button>
+              </div>
+            )}
+
+            {workout.blocks.map((block) => (
               <div key={block.id} className="border border-stone-200 rounded-lg overflow-hidden">
                 {/* Block header */}
                 <div className="flex items-center justify-between px-4 py-3 bg-stone-50 border-b border-stone-200">
                   <div className="flex items-center gap-2">
-                    <GripVertical className="h-4 w-4 text-stone-300 cursor-grab" />
+                    <GripVertical className="h-4 w-4 text-stone-300" />
                     <h3 className="font-bold text-lg">{block.name}</h3>
-                    <button className="text-xs text-stone-400 hover:text-stone-600">edit</button>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-stone-400">▼ next block</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-stone-500">Type</span>
-                      <select
-                        value={block.blockType}
-                        onChange={() => {}}
-                        className="text-sm border border-stone-300 rounded px-2 py-1"
-                      >
-                        <option>Normal</option>
-                        <option>Superset</option>
-                        <option>Circuit</option>
-                        <option>EMOM</option>
-                        <option>AMRAP</option>
-                      </select>
-                    </div>
-                    <button onClick={() => deleteBlock(block.id)} className="text-stone-400 hover:text-red-500">
+                    <select defaultValue={block.blockType} className="text-sm border border-stone-300 rounded px-2 py-1">
+                      <option>Normal</option>
+                      <option>Superset</option>
+                      <option>Circuit</option>
+                      <option>EMOM</option>
+                      <option>AMRAP</option>
+                    </select>
+                    <button
+                      onClick={() => deleteBlock.mutate({ blockId: block.id })}
+                      className="text-stone-400 hover:text-red-500"
+                    >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -284,28 +226,38 @@ export default function WorkoutEditorPage({ params }: { params: Promise<{ id: st
 
                 {/* Exercises in block */}
                 <div className="divide-y divide-stone-100">
+                  {block.exercises.length === 0 && (
+                    <div className="px-4 py-6 text-center text-sm text-stone-400">
+                      Search and add exercises from the left panel.
+                    </div>
+                  )}
+
                   {block.exercises.map((exercise, exIndex) => (
                     <div key={exercise.id} className="px-4 py-4">
-                      {/* Exercise header */}
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-3">
-                          <GripVertical className="h-4 w-4 text-stone-300 cursor-grab" />
                           <span className="w-7 h-7 rounded-full border-2 border-stone-300 flex items-center justify-center text-xs font-medium text-stone-500">
                             {exIndex + 1}
                           </span>
-                          <h4 className="text-base font-semibold text-stone-900">{exercise.name}</h4>
-                          <button className="text-xs text-stone-400 hover:text-stone-600">swap</button>
+                          <h4 className="text-base font-semibold text-stone-900">{exercise.exercise.name}</h4>
                         </div>
                         <div className="flex items-center gap-1">
-                          <Button variant="secondary" size="sm" onClick={() => addSet(block.id, exercise.id)}>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => addSet.mutate({ blockExerciseId: exercise.id })}
+                          >
                             + Add a Set
                           </Button>
                           <button className="p-1.5 text-stone-400 hover:text-stone-600"><Play className="h-4 w-4" /></button>
                           <button className="p-1.5 text-stone-400 hover:text-stone-600"><History className="h-4 w-4" /></button>
                           <button className="p-1.5 text-stone-400 hover:text-stone-600"><Star className="h-4 w-4" /></button>
-                          <button className="p-1.5 text-stone-400 hover:text-stone-600"><Pill className="h-4 w-4" /></button>
-                          <button className="p-1.5 text-stone-400 hover:text-red-500"><Trash2 className="h-4 w-4" /></button>
-                          <button className="p-1.5 text-stone-400 hover:text-stone-600"><ChevronUp className="h-4 w-4" /></button>
+                          <button
+                            onClick={() => removeExercise.mutate({ blockExerciseId: exercise.id })}
+                            className="p-1.5 text-stone-400 hover:text-red-500"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </div>
 
@@ -314,137 +266,102 @@ export default function WorkoutEditorPage({ params }: { params: Promise<{ id: st
                         {exercise.sets.map((set) => (
                           <div key={set.id} className="flex items-center gap-3 text-sm">
                             <span className="text-stone-400 w-14">Set #{set.setNumber}:</span>
-
-                            {exercise.showReps && (
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs text-stone-500">Reps</span>
-                                <input
-                                  type="number"
-                                  value={set.reps ?? ""}
-                                  className="w-14 rounded border border-stone-300 px-2 py-1 text-sm text-center"
-                                  readOnly
-                                />
-                              </div>
-                            )}
-
-                            {exercise.showWeight && (
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs text-stone-500">Weight</span>
-                                <input
-                                  type="number"
-                                  value={set.weight ?? ""}
-                                  className="w-14 rounded border border-stone-300 px-2 py-1 text-sm text-center"
-                                  readOnly
-                                />
-                              </div>
-                            )}
-
-                            {exercise.showTime && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-stone-500">Reps</span>
+                              <input type="number" defaultValue={set.reps ?? ""} className="w-14 rounded border border-stone-300 px-2 py-1 text-sm text-center" />
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-stone-500">{useMetric ? "kg" : "lbs"}</span>
+                              <input type="number" defaultValue={set.weight ?? ""} className="w-14 rounded border border-stone-300 px-2 py-1 text-sm text-center" />
+                            </div>
+                            {set.time != null && (
                               <div className="flex items-center gap-1">
                                 <span className="text-xs text-stone-500">Time</span>
-                                <div className="flex items-center gap-0.5">
-                                  <input type="text" value="00" className="w-8 rounded border border-stone-300 px-1 py-1 text-sm text-center" readOnly />
-                                  <span>:</span>
-                                  <input type="text" value="00" className="w-8 rounded border border-stone-300 px-1 py-1 text-sm text-center" readOnly />
-                                  <span>:</span>
-                                  <input type="text" value="00" className="w-8 rounded border border-stone-300 px-1 py-1 text-sm text-center" readOnly />
-                                </div>
+                                <input type="number" defaultValue={set.time ?? ""} className="w-14 rounded border border-stone-300 px-2 py-1 text-sm text-center" placeholder="sec" />
                               </div>
                             )}
-
-                            {exercise.showDistance && (
+                            {set.distance != null && (
                               <div className="flex items-center gap-1">
-                                <span className="text-xs text-stone-500">Meters</span>
-                                <input
-                                  type="number"
-                                  value={set.distance ?? ""}
-                                  className="w-14 rounded border border-stone-300 px-2 py-1 text-sm text-center"
-                                  readOnly
-                                />
-                              </div>
-                            )}
-
-                            {set.calories != null && (
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs text-stone-500">Calories</span>
-                                <input
-                                  type="number"
-                                  value={set.calories}
-                                  className="w-14 rounded border border-stone-300 px-2 py-1 text-sm text-center"
-                                  readOnly
-                                />
+                                <span className="text-xs text-stone-500">{useMetric ? "m" : "mi"}</span>
+                                <input type="number" defaultValue={set.distance ?? ""} className="w-14 rounded border border-stone-300 px-2 py-1 text-sm text-center" />
                               </div>
                             )}
                           </div>
                         ))}
+                        {exercise.sets.length === 0 && (
+                          <p className="text-xs text-stone-400">No sets — click &quot;+ Add a Set&quot;</p>
+                        )}
                       </div>
 
-                      {/* Set field toggles */}
-                      <div className="flex items-center gap-4 mt-2 ml-10 text-xs text-stone-400">
-                        <button
-                          onClick={() => toggleSetField(block.id, exercise.id, "showReps")}
-                          className="hover:text-stone-600"
-                        >
-                          {exercise.showReps ? "- remove reps" : "+ add reps"}
-                        </button>
-                        <button
-                          onClick={() => toggleSetField(block.id, exercise.id, "showWeight")}
-                          className="hover:text-stone-600"
-                        >
-                          {exercise.showWeight ? "- remove weight" : "+ add weight"}
-                        </button>
-                        <button
-                          onClick={() => toggleSetField(block.id, exercise.id, "showTime")}
-                          className="hover:text-stone-600"
-                        >
-                          {exercise.showTime ? "- remove time" : "+ add time"}
-                        </button>
-                        <button
-                          onClick={() => toggleSetField(block.id, exercise.id, "showDistance")}
-                          className="hover:text-stone-600"
-                        >
-                          {exercise.showDistance ? "- remove distance" : "+ add distance"}
-                        </button>
-                      </div>
-
-                      {/* Exercise notes + rest */}
+                      {/* Notes + Rest */}
                       <div className="flex items-start gap-4 mt-3 ml-10">
                         <textarea
-                          placeholder="Add Exercise Notes"
-                          value={exercise.notes}
+                          placeholder="Exercise notes..."
+                          defaultValue={exercise.notes || ""}
                           className="flex-1 rounded border border-stone-300 px-3 py-2 text-sm placeholder:text-stone-400 resize-none"
                           rows={2}
-                          readOnly
                         />
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-stone-500">Rest</span>
-                            <input type="text" value={exercise.restMM} placeholder="MM" className="w-10 rounded border border-stone-300 px-1 py-1 text-sm text-center" readOnly />
-                            <span>:</span>
-                            <input type="text" value={exercise.restSS} placeholder="SS" className="w-10 rounded border border-stone-300 px-1 py-1 text-sm text-center" readOnly />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs text-stone-500 whitespace-nowrap">Override Calories Burned</span>
-                            <input type="number" value={exercise.overrideCalories ?? ""} className="w-14 rounded border border-stone-300 px-1 py-1 text-sm text-center" readOnly />
-                          </div>
+                        <div className="text-xs text-stone-500">
+                          <span>Rest: {exercise.restSeconds ? `${Math.floor(exercise.restSeconds / 60)}:${(exercise.restSeconds % 60).toString().padStart(2, "0")}` : "—"}</span>
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
+
+                {/* Add exercise to this specific block */}
+                <div className="px-4 py-3 border-t border-stone-100 bg-stone-50">
+                  <ExerciseSearchInBlock
+                    blockId={block.id}
+                    onAdd={(exerciseId) => handleAddExerciseToBlock(block.id, exerciseId)}
+                  />
+                </div>
               </div>
             ))}
           </div>
 
-          {/* Add Block button at bottom */}
           <button
-            onClick={addBlock}
+            onClick={() => addBlock.mutate({ workoutId })}
             className="mt-4 text-sm text-stone-500 hover:text-stone-700 flex items-center gap-1"
           >
             <Plus className="h-4 w-4" /> Add Block
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Inline exercise search within a block */
+function ExerciseSearchInBlock({ blockId, onAdd }: { blockId: string; onAdd: (exerciseId: string) => void }) {
+  const [query, setQuery] = useState("");
+  const { data: results } = trpc.workouts.searchExercises.useQuery(
+    { query, limit: 10 },
+    { enabled: query.length >= 2 }
+  );
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search exercise to add..."
+        className="w-full rounded border border-stone-300 px-3 py-1.5 text-xs placeholder:text-stone-400 focus:outline-none focus:ring-1 focus:ring-stone-500"
+      />
+      {query.length >= 2 && results && results.length > 0 && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-stone-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+          {results.map((ex) => (
+            <button
+              key={ex.id}
+              onClick={() => { onAdd(ex.id); setQuery(""); }}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-stone-50 border-b border-stone-100 last:border-0"
+            >
+              {ex.name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

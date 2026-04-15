@@ -77,9 +77,11 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm">
-              <CalendarIcon className="h-4 w-4" />
-            </Button>
+            <Link href={`/admin/clients/${id}/calendar`}>
+              <Button variant="secondary" size="sm">
+                <CalendarIcon className="h-4 w-4" /> Workout Calendar
+              </Button>
+            </Link>
             <DropdownMenu trigger={<MoreVertical className="h-4 w-4" />}>
               <DropdownItem>Send Message</DropdownItem>
               <DropdownItem>Charge Account</DropdownItem>
