@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { SearchInput } from "@/components/ui/search-input";
 import { trpc } from "@/trpc/client";
 import { useToast } from "@/components/ui/toast";
+import { useRealtimeMessages } from "@/hooks/use-realtime-messages";
 import { Send, Paperclip, PenSquare, Loader2 } from "lucide-react";
 
 export default function MessagesPage() {
@@ -53,6 +54,12 @@ export default function MessagesPage() {
   });
 
   const { data: clientsForConvo } = trpc.clients.list.useQuery({ limit: 50 }, { enabled: showNewConvo });
+
+  // Subscribe to realtime updates for the selected thread
+  useRealtimeMessages(selectedThread, () => {
+    utils.messages.getThread.invalidate({ threadId: selectedThread! });
+    utils.messages.listThreads.invalidate();
+  });
 
   const filteredThreads = (threads ?? []).filter((t) => {
     if (search && !t.clientName.toLowerCase().includes(search.toLowerCase())) return false;

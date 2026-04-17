@@ -2,11 +2,18 @@
 
 import Link from "next/link";
 import { trpc } from "@/trpc/client";
+import { useRealtimeMessageCount } from "@/hooks/use-realtime-messages";
 import { Bell } from "lucide-react";
 
 export function NotificationBell() {
+  const utils = trpc.useUtils();
   const { data: unreadCount } = trpc.messages.unreadCount.useQuery(undefined, {
-    refetchInterval: 30000, // Poll every 30s
+    refetchInterval: 60000, // Fallback poll every minute
+  });
+
+  // Realtime: refresh unread count immediately on new message
+  useRealtimeMessageCount(() => {
+    utils.messages.unreadCount.invalidate();
   });
 
   return (

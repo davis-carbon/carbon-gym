@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/trpc/client";
 import { useToast } from "@/components/ui/toast";
+import { useRealtimeMessages } from "@/hooks/use-realtime-messages";
 import { Send, Loader2, ArrowLeft } from "lucide-react";
 
 export default function ClientMessagesPage() {
@@ -32,6 +33,12 @@ export default function ClientMessagesPage() {
     if (!newMessage.trim() || !selectedThread) return;
     sendMessage.mutate({ threadId: selectedThread, body: newMessage.trim() });
   }
+
+  // Realtime: refresh when new messages arrive
+  useRealtimeMessages(selectedThread, () => {
+    utils.portal.thread.invalidate({ threadId: selectedThread! });
+    utils.portal.messageThreads.invalidate();
+  });
 
   // Thread list view (when no thread selected)
   if (!selectedThread) {

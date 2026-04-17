@@ -127,4 +127,22 @@ export const clientsRouter = createTRPCRouter({
         data: { deletedAt: new Date() },
       });
     }),
+
+  bulkArchive: staffProcedure
+    .input(z.object({ ids: z.array(z.string()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.client.updateMany({
+        where: { id: { in: input.ids }, organizationId: ctx.organizationId },
+        data: { deletedAt: new Date() },
+      });
+    }),
+
+  bulkAssignStaff: staffProcedure
+    .input(z.object({ ids: z.array(z.string()).min(1), staffId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.client.updateMany({
+        where: { id: { in: input.ids }, organizationId: ctx.organizationId },
+        data: { assignedStaffId: input.staffId },
+      });
+    }),
 });
