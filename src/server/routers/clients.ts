@@ -82,13 +82,23 @@ export const clientsRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      return ctx.db.client.create({
+      const created = await ctx.db.client.create({
         data: {
           ...input,
           organizationId: ctx.organizationId,
           assignedStaffId: ctx.staff.id,
         },
       });
+
+      // Send welcome email (fire and forget)
+      if (created.email) {
+        const { sendWelcomeEmail } = await import("@/lib/email");
+        sendWelcomeEmail({ firstName: created.firstName, email: created.email }).catch((err) => {
+          console.error("[clients.create] Welcome email failed:", err);
+        });
+      }
+
+      return created;
     }),
 
   update: staffProcedure
@@ -109,6 +119,7 @@ export const clientsRouter = createTRPCRouter({
         billingStatus: z.enum(["PAID", "NON_BILLED", "BILLED", "PAST_DUE", "CANCELLED"]).optional(),
         assignedStaffId: z.string().nullish(),
         customStatus: z.string().nullish(),
+        profileImageUrl: z.string().nullish(),
       })
     )
     .mutation(async ({ ctx, input }) => {

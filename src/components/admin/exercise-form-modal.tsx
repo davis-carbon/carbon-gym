@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { FileUpload } from "@/components/ui/file-upload";
 import { trpc } from "@/trpc/client";
 import { useToast } from "@/components/ui/toast";
 
@@ -113,7 +114,18 @@ export function ExerciseFormModal({ open, onClose }: ExerciseFormModalProps) {
           <Select label="Force Type" value={form.forceType} onChange={(e) => handleChange("forceType", e.target.value)} options={FORCE_TYPES} />
         </div>
         <Input label="Equipment" value={form.equipment} onChange={(e) => handleChange("equipment", e.target.value)} placeholder="e.g., Barbell, Dumbbell, Cable..." />
-        <Input label="Video URL" value={form.videoUrl} onChange={(e) => handleChange("videoUrl", e.target.value)} placeholder="https://youtube.com/..." />
+        <div>
+          <label className="block text-sm font-medium text-stone-700 mb-1">Video</label>
+          <FileUpload
+            bucket="exercise-media"
+            accept="video/mp4,video/quicktime,video/webm"
+            label="Upload exercise video"
+            currentUrl={form.videoUrl || null}
+            onUploaded={(url) => handleChange("videoUrl", url)}
+            maxSizeMB={100}
+          />
+        </div>
+        <Input label="Or Video URL" value={form.videoUrl} onChange={(e) => handleChange("videoUrl", e.target.value)} placeholder="https://youtube.com/..." />
         <div>
           <label className="block text-sm font-medium text-stone-700 mb-1">Instructions</label>
           <textarea value={form.instructions} onChange={(e) => handleChange("instructions", e.target.value)} placeholder="Step-by-step..." className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-500 resize-none" rows={3} />
