@@ -16,6 +16,8 @@ import {
   Menu,
   X,
 } from "lucide-react";
+import { GlobalSearch } from "./global-search";
+import { NotificationBell } from "./notification-bell";
 
 const navigation = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
@@ -101,8 +103,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           >
             <Menu className="h-6 w-6" />
           </button>
+          <GlobalSearch />
           <div className="flex-1" />
-          {/* Search, notifications, profile will go here */}
+          <NotificationBell />
         </header>
 
         {/* Page content */}

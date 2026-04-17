@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { type ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
+import { trpc } from "@/trpc/client";
+import { Loader2 } from "lucide-react";
 
 interface VisitRow {
   id: string;
@@ -11,17 +14,9 @@ interface VisitRow {
   staff: string;
   location: string;
   status: string;
-  scheduledAt: string;
-  bookedAt: string;
+  scheduledAt: Date;
+  packageName: string | null;
 }
-
-const MOCK_VISITS: VisitRow[] = [
-  { id: "1", clientName: "Meagan Keefe", service: "1-on-1", staff: "Mada Hauck", location: "CARBON", status: "RESERVED", scheduledAt: "2026-06-04T17:30:00", bookedAt: "2026-04-13T16:00:00" },
-  { id: "2", clientName: "Meagan Keefe", service: "1-on-1", staff: "Mada Hauck", location: "CARBON", status: "EARLY_CANCEL", scheduledAt: "2026-05-27T17:30:00", bookedAt: "2026-04-13T09:00:00" },
-  { id: "3", clientName: "Jamey Whitlock", service: "1-on-1", staff: "Mada Hauck", location: "CARBON", status: "CONFIRMED", scheduledAt: "2026-04-14T08:30:00", bookedAt: "2026-04-10T14:00:00" },
-  { id: "4", clientName: "Scott Redding", service: "1-on-1", staff: "Mada Hauck", location: "CARBON", status: "COMPLETED", scheduledAt: "2026-04-14T09:30:00", bookedAt: "2026-04-10T14:00:00" },
-  { id: "5", clientName: "Jesse Weissburg", service: "1-on-1", staff: "Aaron Davis", location: "CARBON", status: "COMPLETED", scheduledAt: "2026-04-14T06:45:00", bookedAt: "2026-04-10T14:00:00" },
-];
 
 const statusMap: Record<string, { label: string; variant: "success" | "info" | "danger" | "warning" | "outline" }> = {
   RESERVED: { label: "Reserved", variant: "info" },
@@ -34,19 +29,18 @@ const statusMap: Record<string, { label: string; variant: "success" | "info" | "
 };
 
 const columns: ColumnDef<VisitRow, unknown>[] = [
-  { accessorKey: "clientName", header: "Name" },
-  {
-    accessorKey: "service",
-    header: "Service",
-    cell: ({ getValue }) => (
-      <div>
-        <p className="text-sm">{getValue() as string}</p>
-        <p className="text-xs text-stone-500">{}</p>
-      </div>
-    ),
-  },
+  { accessorKey: "clientName", header: "Client", cell: ({ getValue }) => <span className="font-medium">{getValue() as string}</span> },
+  { accessorKey: "service", header: "Service" },
   { accessorKey: "staff", header: "Staff" },
-  { accessorKey: "location", header: "Location" },
+  { accessorKey: "location", header: "Location", cell: ({ getValue }) => (getValue() as string) || "—" },
+  {
+    accessorKey: "scheduledAt",
+    header: "When",
+    cell: ({ getValue }) => {
+      const d = new Date(getValue() as string);
+      return <span>{d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })} {d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}</span>;
+    },
+  },
   {
     accessorKey: "status",
     header: "Status",
@@ -56,16 +50,51 @@ const columns: ColumnDef<VisitRow, unknown>[] = [
     },
   },
   {
-    accessorKey: "bookedAt",
-    header: "Booked",
-    cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    accessorKey: "packageName",
+    header: "Package",
+    cell: ({ getValue }) => (getValue() as string) || "—",
   },
 ];
 
 export default function VisitsPage() {
+  const [statusFilter, setStatusFilter] = useState("");
+  const { data, isLoading } = trpc.schedule.visits.list.useQuery({
+    limit: 100,
+    status: statusFilter || undefined,
+  });
+
+  const visitRows: VisitRow[] = (data?.visits ?? []).map((v) => ({
+    id: v.id,
+    clientName: `${v.client.firstName} ${v.client.lastName}`,
+    service: v.service.name,
+    staff: `${v.staff.firstName} ${v.staff.lastName}`,
+    location: v.location?.name ?? "",
+    status: v.status,
+    scheduledAt: v.scheduledAt,
+    packageName: v.clientPackage?.package?.name ?? null,
+  }));
+
   return (
-    <div className="rounded-xl border border-stone-200 bg-white p-6">
-      <DataTable data={MOCK_VISITS} columns={columns} searchPlaceholder="Search visits..." />
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border border-stone-300 px-3 py-1.5 text-sm">
+          <option value="">All Statuses</option>
+          <option value="RESERVED">Reserved</option>
+          <option value="CONFIRMED">Confirmed</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="CANCELLED">Cancelled</option>
+          <option value="EARLY_CANCEL">Early Cancel</option>
+          <option value="NO_SHOW">No Show</option>
+        </select>
+      </div>
+
+      <div className="rounded-xl border border-stone-200 bg-white p-6">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-stone-400" /></div>
+        ) : (
+          <DataTable data={visitRows} columns={columns} searchPlaceholder="Search visits..." />
+        )}
+      </div>
     </div>
   );
 }
