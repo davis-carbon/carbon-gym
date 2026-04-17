@@ -14,6 +14,7 @@ import { PackagesTab } from "@/components/admin/client-detail/packages-tab";
 import { MeasurementsTab } from "@/components/admin/client-detail/measurements-tab";
 import { TrainerNotesTab } from "@/components/admin/client-detail/trainer-notes-tab";
 import { WorkoutsTab } from "@/components/admin/client-detail/workouts-tab";
+import { PaymentsTab } from "@/components/admin/client-detail/payments-tab";
 import { VisitsTab } from "@/components/admin/client-detail/visits-tab";
 import { trpc } from "@/trpc/client";
 
@@ -125,35 +126,7 @@ export default function ClientDetailPage({ params }: { params: Promise<{ id: str
           <PackagesTab clientId={id} />
         </TabsContent>
         <TabsContent value="payments">
-          <Card>
-            <CardHeader><CardTitle>Payments / Products</CardTitle></CardHeader>
-            <CardContent>
-              {(() => {
-                const cf = (client.customFields || {}) as any;
-                const hasSubscription = cf.hasSubscription;
-                const hasPurchase = cf.hasPurchase;
-                const nextPayment = cf.nextPayment;
-                if (!hasSubscription && !hasPurchase) return <p className="text-sm text-stone-400">No billing history. Connect Stripe to enable payments.</p>;
-                return (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div><p className="text-xs text-stone-500">Has Subscription</p><p className="text-sm font-medium">{hasSubscription ? "Yes" : "No"}</p></div>
-                      <div><p className="text-xs text-stone-500">Has Purchase</p><p className="text-sm font-medium">{hasPurchase ? "Yes" : "No"}</p></div>
-                    </div>
-                    {nextPayment && (
-                      <div className="rounded-lg border border-stone-200 p-4">
-                        <p className="text-xs text-stone-500 mb-1">Next Payment</p>
-                        <p className="text-sm font-medium">
-                          {nextPayment.date ? new Date(nextPayment.date * 1000).toLocaleDateString() : "—"}
-                          {nextPayment.data_point ? ` — $${(nextPayment.data_point / 100).toFixed(2)}` : ""}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </CardContent>
-          </Card>
+          <PaymentsTab clientId={id} />
         </TabsContent>
         <TabsContent value="measurements">
           <MeasurementsTab clientId={id} />

@@ -14,6 +14,7 @@ import { automationsRouter } from "./automations";
 import { tagsRouter } from "./tags";
 import { portalRouter } from "./portal";
 import { reportsRouter } from "./reports";
+import { billingRouter } from "./billing";
 
 export const appRouter = createTRPCRouter({
   clients: clientsRouter,
@@ -31,6 +32,7 @@ export const appRouter = createTRPCRouter({
   tags: tagsRouter,
   portal: portalRouter,
   reports: reportsRouter,
+  billing: billingRouter,
 });
 
 export type AppRouter = typeof appRouter;

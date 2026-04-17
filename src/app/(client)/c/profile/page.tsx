@@ -132,6 +132,9 @@ export default function ClientProfilePage() {
         </Card>
       )}
 
+      {/* Billing */}
+      <ManageBillingButton hasCustomerId={!!client.stripeCustomerId} />
+
       <Button variant="ghost" className="w-full text-red-600 hover:bg-red-50" onClick={handleSignOut}>
         <LogOut className="h-4 w-4" /> Sign Out
       </Button>
@@ -145,5 +148,26 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-stone-500">{label}</span>
       <span className="text-stone-900">{value}</span>
     </div>
+  );
+}
+
+function ManageBillingButton({ hasCustomerId }: { hasCustomerId: boolean }) {
+  const { toast } = useToast();
+  const portal = trpc.billing.createPortalSession.useMutation({
+    onSuccess: ({ url }) => { if (url) window.location.href = url; },
+    onError: (err) => toast("error", err.message),
+  });
+
+  if (!hasCustomerId) return null;
+
+  return (
+    <Button
+      variant="secondary"
+      className="w-full"
+      onClick={() => portal.mutate()}
+      disabled={portal.isPending}
+    >
+      {portal.isPending ? "Opening..." : "Manage Billing"}
+    </Button>
   );
 }
