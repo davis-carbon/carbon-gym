@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Zap,
   Settings,
+  BarChart3,
   Menu,
   X,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const navigation = [
   { name: "Groups", href: "/admin/groups", icon: UsersRound },
   { name: "Messages", href: "/admin/messages", icon: MessageSquare },
   { name: "Automations", href: "/admin/automations", icon: Zap },
+  { name: "Reports", href: "/admin/reports", icon: BarChart3 },
   { name: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
