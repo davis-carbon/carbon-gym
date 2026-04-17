@@ -111,7 +111,7 @@ export default function PlansPage() {
             <span className="ml-2 text-sm text-stone-500">Loading plans...</span>
           </div>
         ) : (
-          <DataTable data={planRows} columns={columns} searchPlaceholder="Search plans..." />
+          <DataTable data={planRows} columns={columns} searchPlaceholder="Search plans..." onRowClick={(row) => { window.location.href = `/admin/plans/${row.id}`; }} />
         )}
       </div>
 

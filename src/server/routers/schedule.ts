@@ -62,6 +62,111 @@ export const scheduleRouter = createTRPCRouter({
         orderBy: { name: "asc" },
       });
     }),
+    create: staffProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        address: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        zip: z.string().optional(),
+        phone: z.string().optional(),
+        timezone: z.string().default("America/Denver"),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.location.create({ data: { ...input, organizationId: ctx.organizationId } });
+      }),
+    update: staffProcedure
+      .input(z.object({
+        id: z.string(),
+        name: z.string().optional(),
+        address: z.string().nullish(),
+        city: z.string().nullish(),
+        state: z.string().nullish(),
+        zip: z.string().nullish(),
+        phone: z.string().nullish(),
+        isActive: z.boolean().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, ...data } = input;
+        return ctx.db.location.update({ where: { id, organizationId: ctx.organizationId }, data });
+      }),
+    delete: staffProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.location.delete({ where: { id: input.id, organizationId: ctx.organizationId } });
+      }),
+  }),
+
+  // ── Availability Schedules ────────────
+  availability: createTRPCRouter({
+    listByStaff: staffProcedure
+      .input(z.object({ staffId: z.string().optional() }).optional())
+      .query(async ({ ctx, input }) => {
+        return ctx.db.availabilitySchedule.findMany({
+          where: {
+            staff: { organizationId: ctx.organizationId },
+            ...(input?.staffId && { staffId: input.staffId }),
+          },
+          include: {
+            staff: { select: { firstName: true, lastName: true } },
+            location: { select: { name: true } },
+            slots: true,
+          },
+          orderBy: { staff: { firstName: "asc" } },
+        });
+      }),
+    create: staffProcedure
+      .input(z.object({
+        staffId: z.string(),
+        name: z.string().default("Default"),
+        locationId: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.availabilitySchedule.create({ data: input });
+      }),
+    addSlot: staffProcedure
+      .input(z.object({
+        scheduleId: z.string(),
+        dayOfWeek: z.enum(["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY"]),
+        startTime: z.string(),
+        endTime: z.string(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.availabilitySlot.create({ data: input });
+      }),
+    deleteSlot: staffProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.availabilitySlot.delete({ where: { id: input.id } });
+      }),
+    deleteSchedule: staffProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.availabilitySchedule.delete({ where: { id: input.id } });
+      }),
+  }),
+
+  // ── Recurring Members ────────────────
+  recurringMembers: createTRPCRouter({
+    create: staffProcedure
+      .input(z.object({
+        clientId: z.string(),
+        serviceId: z.string(),
+        staffId: z.string(),
+        startDate: z.date(),
+        endDate: z.date().optional(),
+        dayOfWeek: z.enum(["MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY"]),
+        startTime: z.string(),
+        frequency: z.string().default("weekly"),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.recurringMember.create({ data: input });
+      }),
+    delete: staffProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.recurringMember.update({ where: { id: input.id }, data: { isActive: false } });
+      }),
   }),
 
   // ── Appointments ──────────────────────

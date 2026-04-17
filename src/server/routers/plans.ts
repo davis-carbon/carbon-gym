@@ -158,4 +158,94 @@ export const plansRouter = createTRPCRouter({
         },
       });
     }),
+
+  // ── Routine management ────────────────
+
+  addRoutine: staffProcedure
+    .input(z.object({
+      planId: z.string(),
+      weekNumber: z.number(),
+      dayNumber: z.number(),
+      name: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = await ctx.db.planRoutine.count({
+        where: { planId: input.planId, weekNumber: input.weekNumber, dayNumber: input.dayNumber },
+      });
+      return ctx.db.planRoutine.create({
+        data: {
+          planId: input.planId,
+          weekNumber: input.weekNumber,
+          dayNumber: input.dayNumber,
+          name: input.name,
+          sortOrder: existing,
+        },
+      });
+    }),
+
+  deleteRoutine: staffProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.planRoutine.delete({ where: { id: input.id } });
+    }),
+
+  updateRoutine: staffProcedure
+    .input(z.object({
+      id: z.string(),
+      name: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      return ctx.db.planRoutine.update({ where: { id }, data });
+    }),
+
+  // ── Routine exercise management ──────
+
+  addExerciseToRoutine: staffProcedure
+    .input(z.object({
+      routineId: z.string(),
+      exerciseId: z.string(),
+      sets: z.number().optional(),
+      reps: z.string().optional(),
+      weight: z.string().optional(),
+      restSeconds: z.number().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = await ctx.db.routineExercise.count({ where: { routineId: input.routineId } });
+      return ctx.db.routineExercise.create({
+        data: {
+          routineId: input.routineId,
+          exerciseId: input.exerciseId,
+          sets: input.sets,
+          reps: input.reps,
+          weight: input.weight,
+          restSeconds: input.restSeconds,
+          sortOrder: existing,
+        },
+        include: { exercise: true },
+      });
+    }),
+
+  updateRoutineExercise: staffProcedure
+    .input(z.object({
+      id: z.string(),
+      sets: z.number().nullish(),
+      reps: z.string().nullish(),
+      weight: z.string().nullish(),
+      restSeconds: z.number().nullish(),
+      duration: z.string().nullish(),
+      tempo: z.string().nullish(),
+      notes: z.string().nullish(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      return ctx.db.routineExercise.update({ where: { id }, data });
+    }),
+
+  deleteRoutineExercise: staffProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.routineExercise.delete({ where: { id: input.id } });
+    }),
 });
