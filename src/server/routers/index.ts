@@ -15,6 +15,13 @@ import { tagsRouter } from "./tags";
 import { portalRouter } from "./portal";
 import { reportsRouter } from "./reports";
 import { billingRouter } from "./billing";
+import { assessmentsRouter } from "./assessments";
+import { resourcesRouter } from "./resources";
+import { videosRouter } from "./videos";
+import { progressPhotosRouter } from "./progressPhotos";
+import { nutritionRouter } from "./nutrition";
+import { auditLogRouter } from "./auditLog";
+import { lifecycleRouter } from "./lifecycle";
 
 export const appRouter = createTRPCRouter({
   clients: clientsRouter,
@@ -33,6 +40,13 @@ export const appRouter = createTRPCRouter({
   portal: portalRouter,
   reports: reportsRouter,
   billing: billingRouter,
+  assessments: assessmentsRouter,
+  resources: resourcesRouter,
+  videos: videosRouter,
+  progressPhotos: progressPhotosRouter,
+  nutrition: nutritionRouter,
+  auditLog: auditLogRouter,
+  lifecycle: lifecycleRouter,
 });
 
 export type AppRouter = typeof appRouter;

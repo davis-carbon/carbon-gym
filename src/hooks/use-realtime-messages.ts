@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /**
@@ -37,12 +37,13 @@ export function useRealtimeMessages(threadId: string | null, onNewMessage: () =>
  * Calls onChange when any new message arrives.
  */
 export function useRealtimeMessageCount(onChange: () => void, enabled = true) {
+  const uid = useId();
   useEffect(() => {
     if (!enabled) return;
 
     const supabase = createSupabaseBrowserClient();
     const channel = supabase
-      .channel("all-messages")
+      .channel(`all-messages-${uid}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "Message" },

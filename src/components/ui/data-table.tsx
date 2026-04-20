@@ -9,8 +9,9 @@ import {
   flexRender,
   type ColumnDef,
   type SortingState,
+  type RowSelectionState,
 } from "@tanstack/react-table";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface DataTableProps<T> {
@@ -19,6 +20,14 @@ interface DataTableProps<T> {
   searchPlaceholder?: string;
   onRowClick?: (row: T) => void;
   pageSize?: number;
+  /** Optional row-id extractor; required when enableRowSelection is true */
+  getRowId?: (row: T) => string;
+  /** Opt in to multi-select checkbox column */
+  enableRowSelection?: boolean;
+  /** Called when selection changes — receives selected row ids */
+  onSelectionChange?: (ids: string[]) => void;
+  /** External reset signal — when changed, selection is cleared */
+  resetSelectionSignal?: number;
 }
 
 export function DataTable<T>({
@@ -27,22 +36,75 @@ export function DataTable<T>({
   searchPlaceholder = "Search...",
   onRowClick,
   pageSize = 25,
+  getRowId,
+  enableRowSelection,
+  onSelectionChange,
+  resetSelectionSignal,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  // Prepend selection column when enabled
+  const effectiveColumns: ColumnDef<T, unknown>[] = enableRowSelection
+    ? [
+        {
+          id: "__select",
+          size: 40,
+          enableSorting: false,
+          header: ({ table }) => (
+            <input
+              type="checkbox"
+              checked={table.getIsAllPageRowsSelected()}
+              ref={(el) => {
+                if (el) el.indeterminate = table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected();
+              }}
+              onChange={table.getToggleAllPageRowsSelectedHandler()}
+              onClick={(e) => e.stopPropagation()}
+              className="h-4 w-4 rounded border-stone-300 text-stone-900 focus:ring-stone-500"
+            />
+          ),
+          cell: ({ row }) => (
+            <input
+              type="checkbox"
+              checked={row.getIsSelected()}
+              onChange={row.getToggleSelectedHandler()}
+              onClick={(e) => e.stopPropagation()}
+              className="h-4 w-4 rounded border-stone-300 text-stone-900 focus:ring-stone-500"
+            />
+          ),
+        },
+        ...columns,
+      ]
+    : columns;
 
   const table = useReactTable({
     data,
-    columns,
-    state: { sorting, globalFilter },
+    columns: effectiveColumns,
+    state: { sorting, globalFilter, rowSelection },
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection,
+    getRowId: getRowId as ((row: T, index: number) => string) | undefined,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     initialState: { pagination: { pageSize } },
   });
+
+  // Propagate selection changes upward
+  useEffect(() => {
+    if (!enableRowSelection || !onSelectionChange) return;
+    const ids = Object.keys(rowSelection).filter((k) => rowSelection[k]);
+    onSelectionChange(ids);
+  }, [rowSelection, enableRowSelection, onSelectionChange]);
+
+  // External reset
+  useEffect(() => {
+    if (resetSelectionSignal !== undefined) setRowSelection({});
+  }, [resetSelectionSignal]);
 
   return (
     <div className="space-y-4">
@@ -97,7 +159,7 @@ export function DataTable<T>({
             {table.getRowModel().rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length}
+                  colSpan={effectiveColumns.length}
                   className="px-4 py-12 text-center text-stone-400"
                 >
                   No results found.
@@ -111,7 +173,7 @@ export function DataTable<T>({
                     onRowClick
                       ? "cursor-pointer hover:bg-stone-50 transition-colors"
                       : ""
-                  }`}
+                  } ${row.getIsSelected() ? "bg-stone-50" : ""}`}
                   onClick={() => onRowClick?.(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (

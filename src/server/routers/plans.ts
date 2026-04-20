@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { createTRPCRouter, staffProcedure } from "../trpc";
+import { createTRPCRouter, staffProcedure, clientProcedure } from "../trpc";
+import Stripe from "stripe";
 
 export const plansRouter = createTRPCRouter({
   list: staffProcedure
@@ -59,6 +60,10 @@ export const plansRouter = createTRPCRouter({
         sizeWeeks: z.number().min(1).max(52).default(4),
         planType: z.string().optional(),
         tags: z.array(z.string()).default([]),
+        difficulty: z.string().optional(),
+        equipment: z.array(z.string()).default([]),
+        frequency: z.string().optional(),
+        objectives: z.string().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -157,6 +162,114 @@ export const plansRouter = createTRPCRouter({
           endDate: input.endDate,
         },
       });
+    }),
+
+  /** Assign this plan to every active member of a group. */
+  assignToGroup: staffProcedure
+    .input(z.object({
+      planId: z.string(),
+      groupId: z.string(),
+      startDate: z.date().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const plan = await ctx.db.workoutPlan.findFirst({
+        where: { id: input.planId, organizationId: ctx.organizationId },
+        select: { id: true },
+      });
+      if (!plan) throw new Error("Plan not found");
+
+      const members = await ctx.db.clientGroup.findMany({
+        where: { groupId: input.groupId, group: { organizationId: ctx.organizationId } },
+        select: { clientId: true },
+      });
+
+      let assigned = 0;
+      for (const { clientId } of members) {
+        const existing = await ctx.db.planAssignment.findFirst({
+          where: { planId: input.planId, clientId, isActive: true },
+        });
+        if (!existing) {
+          await ctx.db.planAssignment.create({
+            data: { planId: input.planId, clientId, assignedById: ctx.staff.id, startDate: input.startDate, isActive: true },
+          });
+          assigned++;
+        }
+      }
+      return { assigned, total: members.length };
+    }),
+
+  /** Update plan settings (monetization + metadata fields). */
+  updateSettings: staffProcedure
+    .input(z.object({
+      id: z.string(),
+      description: z.string().nullish(),
+      isSellable: z.boolean().optional(),
+      price: z.number().nonnegative().nullish(),
+      checkoutDescription: z.string().nullish(),
+      welcomeMessage: z.string().nullish(),
+      thankYouMessage: z.string().nullish(),
+      difficulty: z.string().nullish(),
+      equipment: z.array(z.string()).optional(),
+      frequency: z.string().nullish(),
+      objectives: z.string().nullish(),
+      requireWorkoutLogging: z.boolean().optional(),
+      autoStartPlanId: z.string().nullish(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      return ctx.db.workoutPlan.update({
+        where: { id, organizationId: ctx.organizationId },
+        data,
+      });
+    }),
+
+  /** Remove a specific plan assignment from a client. */
+  unassignFromClient: staffProcedure
+    .input(z.object({ assignmentId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.planAssignment.delete({
+        where: {
+          id: input.assignmentId,
+          plan: { organizationId: ctx.organizationId },
+        },
+      });
+    }),
+
+  /** Create a Stripe checkout session so a client can purchase this plan. */
+  createCheckout: clientProcedure
+    .input(z.object({ planId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const plan = await ctx.db.workoutPlan.findFirst({
+        where: { id: input.planId, isSellable: true, status: "PUBLISHED" },
+        select: { id: true, name: true, price: true, checkoutDescription: true },
+      });
+      if (!plan || !plan.price) throw new Error("Plan is not available for purchase");
+
+      const stripeKey = process.env.STRIPE_SECRET_KEY;
+      if (!stripeKey) throw new Error("Stripe not configured");
+
+      const stripe = new Stripe(stripeKey, { apiVersion: "2025-02-24.acacia" });
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        line_items: [{
+          price_data: {
+            currency: "usd",
+            unit_amount: Math.round(plan.price * 100),
+            product_data: {
+              name: plan.name,
+              description: plan.checkoutDescription ?? undefined,
+            },
+          },
+          quantity: 1,
+        }],
+        metadata: { planId: plan.id, clientId: ctx.client.id },
+        success_url: `${appUrl}/c/workouts?plan_purchased=1`,
+        cancel_url: `${appUrl}/c/workouts`,
+      });
+
+      return { url: session.url };
     }),
 
   // ── Routine management ────────────────

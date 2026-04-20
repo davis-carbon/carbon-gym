@@ -5,7 +5,7 @@ import { Upload, X, Loader2, Check } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 
 interface FileUploadProps {
-  bucket: "avatars" | "exercise-media" | "resources" | "message-attachments" | "uploads";
+  bucket: "avatars" | "exercise-media" | "resources" | "message-attachments" | "uploads" | "group-images";
   path?: string;
   accept?: string;
   label?: string;

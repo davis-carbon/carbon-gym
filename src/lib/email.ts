@@ -97,6 +97,37 @@ export async function sendAppointmentReminderEmail(opts: {
   });
 }
 
+export async function sendAppointmentConfirmation(opts: {
+  to: string;
+  clientName: string;
+  serviceName: string;
+  staffName: string;
+  scheduledAt: Date;
+  locationName?: string;
+}) {
+  const dateStr = opts.scheduledAt.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const timeStr = opts.scheduledAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+  return sendEmail({
+    to: opts.to,
+    subject: `Appointment Confirmed — ${opts.serviceName} on ${dateStr}`,
+    html: `
+      <div style="font-family: system-ui, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+        <h2 style="margin: 0 0 16px; color: #1c1917;">Appointment Confirmed</h2>
+        <p style="color: #57534e; margin: 0 0 16px;">Hi ${opts.clientName},</p>
+        <p style="color: #57534e; margin: 0 0 24px;">Your appointment has been confirmed. Here are the details:</p>
+        <div style="background: #f5f5f4; border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+          <p style="margin: 0 0 8px; font-weight: 600; color: #1c1917;">${opts.serviceName}</p>
+          <p style="margin: 0 0 4px; color: #57534e;">${dateStr} at ${timeStr}</p>
+          <p style="margin: 0 0 4px; color: #57534e;">with ${opts.staffName}</p>
+          ${opts.locationName ? `<p style="margin: 0; color: #57534e;">${opts.locationName}</p>` : ""}
+        </div>
+        <p style="color: #a8a29e; font-size: 12px; margin: 0;">Carbon Training Centre</p>
+      </div>
+    `,
+  });
+}
+
 export async function sendPaymentFailedEmail(opts: {
   to: string;
   clientFirstName: string;

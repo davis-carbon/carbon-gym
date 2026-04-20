@@ -97,6 +97,11 @@ enum AutomationTrigger {
   DAYS_AFTER_PURCHASE
   DAYS_AFTER_SIGNUP
   DAYS_BEFORE_EXPIRY
+  DAYS_BEFORE_BIRTHDAY
+  LOW_SESSIONS_REMAINING
+  PLAN_ENDING_SOON
+  TAG_ADDED
+  TAG_REMOVED
   ON_FIRST_LOGIN
   MANUAL
 }
@@ -199,9 +204,13 @@ model Organization {
   appointments       Appointment[]
   assessments        Assessment[]
   resources          Resource[]
+  videos             Video[]
   automations        Automation[]
   auditLogs          AuditLog[]
   messageThreads     MessageThread[]
+  accountBalanceTransactions AccountBalanceTransaction[]
+  serviceBalanceTransactions ServiceBalanceTransaction[]
+  clientNoteFields   ClientNoteField[]
 }
 
 // ─────────────────────────────────────────────
@@ -219,10 +228,15 @@ model StaffMember {
   phone          String?
   bio            String?
   avatarUrl      String?
-  color          String   @default("#6B7280") // Calendar display color
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  color           String   @default("#6B7280") // Calendar display color
+  dashboardConfig Json?                        // Persisted card layout [{id,type,timeRange}]
+  specialties     String[]                     // e.g. ["Strength & Conditioning", "Nutrition"]
+  certifications  String[]                     // e.g. ["NASM-CPT", "CrossFit L2"]
+  linkedinUrl     String?
+  instagramUrl    String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   organization        Organization          @relation(fields: [organizationId], references: [id])
   assignedClients     Client[]
@@ -233,12 +247,19 @@ model StaffMember {
   trainerNotes        TrainerNote[]
   nutritionPlans      NutritionPlan[]
   measurements        Measurement[]         @relation("MeasurementTakenBy")
+  updatedNoteValues   ClientNoteValue[]     @relation("NoteValueUpdatedBy")
   createdAssessments  Assessment[]
   createdResources    Resource[]
+  createdVideos       Video[]
+  uploadedProgressPhotos ProgressPhoto[]
   createdAutomations  Automation[]
   availabilitySchedules AvailabilitySchedule[]
   recurringMembers    RecurringMember[]
-  trainedWorkouts     ClientWorkout[]   @relation("WorkoutTrainer")
+  trainedWorkouts     ClientWorkout[]       @relation("WorkoutTrainer")
+  groupPosts          GroupPost[]
+  groupPostComments   GroupPostComment[]
+  recordedRepMaxes    RepMax[]              @relation("RepMaxRecordedBy")
+  assessmentAssignments AssessmentAssignment[] @relation("AssignmentAssignedBy")
 
   @@index([organizationId])
   @@index([userId])
@@ -262,6 +283,12 @@ model Client {
   city             String?
   state            String?
   zip              String?
+  country          String?
+  billingAddress   String?
+  billingCity      String?
+  billingState     String?
+  billingZip       String?
+  billingCountry   String?
   height           String?
   weight           String?
   profileImageUrl  String?
@@ -292,12 +319,24 @@ model Client {
   nutritionLogs    NutritionLog[]
   assessmentSubmissions AssessmentSubmission[]
   resourceAssignments   ResourceAssignment[]
+  videoAssignments      VideoAssignment[]
+  progressPhotos        ProgressPhoto[]
   appointments     Appointment[]
   planAssignments  PlanAssignment[]
   recurringMembers RecurringMember[]
   messageParticipants MessageParticipant[]
   pushSubscriptions   ClientPushSubscription[]
-  clientWorkouts   ClientWorkout[]
+  clientWorkouts      ClientWorkout[]
+  groupPosts          GroupPost[]
+  groupPostComments   GroupPostComment[]
+  accountBalanceTransactions AccountBalanceTransaction[]
+  serviceBalanceTransactions ServiceBalanceTransaction[]
+  clientNoteValues   ClientNoteValue[]
+  repMaxes           RepMax[]
+  nutritionGoals        NutritionGoals[]
+  nutritionFiles        NutritionFile[]
+  assessmentAssignments AssessmentAssignment[]
+  lifecycleEvents       ClientLifecycleEvent[]
 
   @@index([organizationId])
   @@index([assignedStaffId])
@@ -347,19 +386,27 @@ model ClientTag {
 }
 
 model Group {
-  id             String   @id @default(cuid())
-  organizationId String
-  name           String
-  description    String?
-  imageUrl       String?
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id               String   @id @default(cuid())
+  organizationId   String
+  name             String
+  description      String?
+  imageUrl         String?
+  isActive         Boolean  @default(true)
+  // Collaboration features
+  isPublic         Boolean  @default(false)
+  publicSlug       String?  @unique
+  maxMembers       Int?
+  lifecycleOnJoin  String?
+  allowClientPosts Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  organization Organization  @relation(fields: [organizationId], references: [id])
+  organization Organization   @relation(fields: [organizationId], references: [id])
   members      ClientGroup[]
+  posts        GroupPost[]
 
   @@index([organizationId])
+  @@index([publicSlug])
 }
 
 model ClientGroup {
@@ -373,6 +420,41 @@ model ClientGroup {
   @@id([clientId, groupId])
 }
 
+model GroupPost {
+  id             String   @id @default(cuid())
+  groupId        String
+  staffAuthorId  String?
+  clientAuthorId String?
+  content        String
+  mediaUrl       String?
+  isAnnouncement Boolean  @default(false)
+  isPinned       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  group        Group              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  staffAuthor  StaffMember?       @relation(fields: [staffAuthorId], references: [id])
+  clientAuthor Client?            @relation(fields: [clientAuthorId], references: [id])
+  comments     GroupPostComment[]
+
+  @@index([groupId, createdAt])
+}
+
+model GroupPostComment {
+  id             String   @id @default(cuid())
+  postId         String
+  staffAuthorId  String?
+  clientAuthorId String?
+  content        String
+  createdAt      DateTime @default(now())
+
+  post         GroupPost    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  staffAuthor  StaffMember? @relation(fields: [staffAuthorId], references: [id])
+  clientAuthor Client?      @relation(fields: [clientAuthorId], references: [id])
+
+  @@index([postId])
+}
+
 // ─────────────────────────────────────────────
 // EXERCISES
 // ─────────────────────────────────────────────
@@ -382,17 +464,28 @@ model Exercise {
   organizationId   String
   name             String
   description      String?
-  instructions     String?
+  instructions     String?         // Legacy freetext; prefer steps[]
   muscleGroup      MuscleGroup?
   secondaryMuscles MuscleGroup[]
   difficultyLevel  DifficultyLevel?
   forceType        ForceType?
   equipment        String?
-  videoUrl         String?
+  videoUrl         String?         // Direct URL or YouTube watch URL
+  youtubeVideoId   String?         // Extracted YouTube ID for embed
   thumbnailUrl     String?
   isActive         Boolean         @default(true)
   createdById      String?
   tags             String[]
+  // Enhanced fields
+  exerciseType     String?         // e.g. "Strength", "Cardio", "Mobility", "Plyometric"
+  mechanics        String?         // e.g. "Compound", "Isolation"
+  laterality       String?         // "Bilateral", "Unilateral", "Each Side"
+  isEachSide       Boolean         @default(false)
+  tempo            String?         // e.g. "3-1-2-0" (eccentric-pause-concentric-pause)
+  steps            String[]        // Step-by-step instructions array
+  tips             String[]        // Coaching tips
+  variations       String[]        // Variation names (freetext)
+  customFields     Json            @default("{}")
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -401,6 +494,8 @@ model Exercise {
   routineExercises RoutineExercise[]
   workoutLogExercises WorkoutLogExercise[]
   workoutBlockExercises WorkoutBlockExercise[]
+  alternateFor     WorkoutAlternateExercise[]
+  repMaxes         RepMax[]
 
   @@index([organizationId])
   @@index([muscleGroup])
@@ -416,11 +511,24 @@ model WorkoutPlan {
   organizationId String
   name           String
   description    String?
-  sizeWeeks      Int        @default(4)
-  status         PlanStatus @default(DRAFT)
-  planType       String?
-  createdById    String?
-  tags           String[]
+  sizeWeeks             Int        @default(4)
+  status                PlanStatus @default(DRAFT)
+  planType              String?
+  createdById           String?
+  tags                  String[]
+  // Selling
+  isSellable            Boolean    @default(false)
+  price                 Float?
+  checkoutDescription   String?
+  welcomeMessage        String?
+  thankYouMessage       String?
+  // Plan settings
+  difficulty            String?
+  equipment             String[]
+  frequency             String?
+  objectives            String?
+  requireWorkoutLogging Boolean    @default(false)
+  autoStartPlanId       String?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
@@ -509,7 +617,8 @@ model ClientWorkout {
   totalDistance   Float?    // miles
   totalReps      Int?
   totalCalories  Int?
-  notes          String?
+  notes          String?   // Client-visible workout notes
+  staffNotes     String?   // Private staff notes
   source         String    @default("calendar") // "calendar", "plan", "copied"
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -528,8 +637,10 @@ model WorkoutBlock {
   id          String  @id @default(cuid())
   workoutId   String
   name        String  @default("Block A") // "Block A", "Block B", etc.
-  blockType   String  @default("Normal")  // "Normal", "Superset", "Circuit", "EMOM", "AMRAP"
+  blockType   String  @default("Normal")  // "Normal", "Superset", "Circuit", "EMOM", "AMRAP", "Tabata"
   sortOrder   Int     @default(0)
+  rounds      Int?    // Number of rounds (for Circuit, EMOM, etc.)
+  notes       String? // Block-level notes visible to client
 
   workout   ClientWorkout       @relation(fields: [workoutId], references: [id], onDelete: Cascade)
   exercises WorkoutBlockExercise[]
@@ -538,19 +649,40 @@ model WorkoutBlock {
 }
 
 model WorkoutBlockExercise {
-  id          String  @id @default(cuid())
-  blockId     String
-  exerciseId  String
-  sortOrder   Int     @default(0)
-  notes       String?
-  restSeconds Int?    // Rest between sets (in seconds)
-  overrideCalories Int? // Override calories burned
+  id              String  @id @default(cuid())
+  blockId         String
+  exerciseId      String
+  sortOrder       Int     @default(0)
+  notes           String?
+  restSeconds     Int?    // Rest between sets (in seconds)
+  restSecondsB    Int?    // Second rest value (MM part stored separately)
+  overrideCalories Int?   // Override calories burned
+  measurementType String  @default("reps,weight") // Comma-separated: reps,weight,time,distance,calories,rpe
+  tempo           String?  // e.g., "3-0-1-0"
+  intensity       String?  // e.g., "8/10"
+  isAmrap         Boolean  @default(false)
+  eachSide        Boolean  @default(false)
+  progressions    Boolean  @default(false)
+  saveAsRepMax    Boolean  @default(false)
 
-  block    WorkoutBlock          @relation(fields: [blockId], references: [id], onDelete: Cascade)
-  exercise Exercise              @relation(fields: [exerciseId], references: [id])
-  sets     WorkoutBlockExerciseSet[]
+  block      WorkoutBlock              @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  exercise   Exercise                  @relation(fields: [exerciseId], references: [id])
+  sets       WorkoutBlockExerciseSet[]
+  alternates WorkoutAlternateExercise[]
 
   @@index([blockId])
+}
+
+model WorkoutAlternateExercise {
+  id              String @id @default(cuid())
+  blockExerciseId String
+  exerciseId      String
+  sortOrder       Int    @default(0)
+
+  blockExercise WorkoutBlockExercise @relation(fields: [blockExerciseId], references: [id], onDelete: Cascade)
+  exercise      Exercise             @relation(fields: [exerciseId], references: [id])
+
+  @@index([blockExerciseId])
 }
 
 model WorkoutBlockExerciseSet {
@@ -563,6 +695,7 @@ model WorkoutBlockExerciseSet {
   distance    Float?  // Meters or miles
   calories    Int?
   rpe         Float?  // Rate of perceived exertion
+  percentage  Float?  // % of 1RM (e.g. 75 = 75%)
   isCompleted Boolean @default(false) // Client marked as done
   actualReps    Int?    // What client actually did
   actualWeight  Float?
@@ -580,13 +713,16 @@ model WorkoutBlockExerciseSet {
 // ─────────────────────────────────────────────
 
 model WorkoutLog {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   clientId         String
   planAssignmentId String?
-  date             DateTime
+  planId           String?
+  planRoutineId    String?   // Which routine in the plan was completed
+  date             DateTime  @default(now())
+  completedAt      DateTime?
   durationMinutes  Int?
   notes            String?
-  createdAt        DateTime @default(now())
+  createdAt        DateTime  @default(now())
 
   client         Client          @relation(fields: [clientId], references: [id])
   planAssignment PlanAssignment? @relation(fields: [planAssignmentId], references: [id])
@@ -594,6 +730,7 @@ model WorkoutLog {
 
   @@index([clientId])
   @@index([date])
+  @@index([planAssignmentId])
 }
 
 model WorkoutLogExercise {
@@ -767,6 +904,7 @@ model Appointment {
   cancelReason     String?
   isRecurring      Boolean     @default(false)
   recurringMemberId String?
+  reminderSentAt   DateTime?
   bookedAt         DateTime    @default(now())
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
@@ -822,6 +960,7 @@ model Payment {
   status                PaymentStatus @default(PENDING)
   stripePaymentIntentId String?
   stripeInvoiceId       String?
+  invoiceNumber         String?       // Human-readable invoice ref e.g. INV-0042
   description           String?
   failureReason         String?
   refundedAmount        Float         @default(0)
@@ -834,6 +973,37 @@ model Payment {
   @@index([clientId])
   @@index([status])
   @@index([paidAt])
+}
+
+model AccountBalanceTransaction {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String
+  amount         Float    // positive = credit, negative = debit
+  description    String?
+  runningBalance Float    @default(0)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  client       Client       @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+}
+
+model ServiceBalanceTransaction {
+  id              String   @id @default(cuid())
+  organizationId  String
+  clientId        String
+  amount          Float
+  description     String?
+  startingBalance Float    @default(0)
+  endingBalance   Float    @default(0)
+  createdAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  client       Client       @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
 }
 
 // ─────────────────────────────────────────────
@@ -854,6 +1024,15 @@ model Measurement {
   leftThigh      Float?
   rightThigh     Float?
   neck           Float?
+  sleepHours     Float?
+  energyLevel    Float?
+  waterOunces    Float?
+  stepsPerDay    Float?
+  effort         Float?
+  hunger         Float?
+  cravings       Float?
+  stress         Float?
+  hrv            Float?
   notes          String?
   takenById      String?
   createdAt      DateTime  @default(now())
@@ -866,17 +1045,48 @@ model Measurement {
 }
 
 model TrainerNote {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   clientId  String
   staffId   String
+  title     String?
   content   String
-  isPrivate Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  noteDate  DateTime?
+  isPrivate Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   client Client      @relation(fields: [clientId], references: [id])
   staff  StaffMember @relation(fields: [staffId], references: [id])
 
+  @@index([clientId])
+}
+
+model ClientNoteField {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  order          Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  values       ClientNoteValue[]
+
+  @@index([organizationId])
+}
+
+model ClientNoteValue {
+  id          String   @id @default(cuid())
+  clientId    String
+  fieldId     String
+  content     String   @default("")
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+
+  client    Client          @relation(fields: [clientId], references: [id])
+  field     ClientNoteField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  updatedBy StaffMember?    @relation("NoteValueUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([clientId, fieldId])
   @@index([clientId])
 }
 
@@ -920,6 +1130,43 @@ model NutritionMeal {
   @@index([planId])
 }
 
+model NutritionGoals {
+  id                    String   @id @default(cuid())
+  clientId              String
+  dayType               String   @default("training") // "training" | "rest"
+  carbs                 Float?
+  fat                   Float?
+  protein               Float?
+  fiber                 Float?
+  kcalPerGramCarbs      Float    @default(4)
+  kcalPerGramFat        Float    @default(9)
+  kcalPerGramProtein    Float    @default(4)
+  kcalPerGramFiber      Float    @default(4)
+  autoCalculateCalories Boolean  @default(true)
+  totalCalories         Float?
+  notes                 String?  // Shown/edited on the training day record only
+  updatedAt             DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, dayType])
+  @@index([clientId])
+}
+
+model NutritionFile {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  url       String
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
 model NutritionLog {
   id       String   @id @default(cuid())
   clientId String
@@ -954,11 +1201,30 @@ model Assessment {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization          @relation(fields: [organizationId], references: [id])
-  createdBy    StaffMember?          @relation(fields: [createdById], references: [id])
+  organization Organization           @relation(fields: [organizationId], references: [id])
+  createdBy    StaffMember?           @relation(fields: [createdById], references: [id])
   submissions  AssessmentSubmission[]
+  assignments  AssessmentAssignment[]
 
   @@index([organizationId])
+}
+
+model AssessmentAssignment {
+  id                    String    @id @default(cuid())
+  assessmentId          String
+  clientId              String
+  assignedById          String?
+  sendReminders         Boolean   @default(false)
+  unassignAfterComplete Boolean   @default(false)
+  assignedAt            DateTime  @default(now())
+  completedAt           DateTime?
+
+  assessment Assessment   @relation(fields: [assessmentId], references: [id])
+  client     Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  assignedBy StaffMember?  @relation("AssignmentAssignedBy", fields: [assignedById], references: [id])
+
+  @@index([clientId])
+  @@index([assessmentId])
 }
 
 model AssessmentSubmission {
@@ -1010,6 +1276,60 @@ model ResourceAssignment {
 
   @@index([clientId])
   @@index([resourceId])
+}
+
+// ─────────────────────────────────────────────
+// PROGRESS PHOTOS
+// ─────────────────────────────────────────────
+
+model ProgressPhoto {
+  id          String   @id @default(cuid())
+  clientId    String
+  fileUrl     String?  // uploaded file URL
+  videoUrl    String?  // YouTube / Vimeo link
+  caption     String?
+  takenAt     DateTime @default(now())
+  createdAt   DateTime @default(now())
+  uploadedById String?
+
+  client     Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  uploadedBy StaffMember? @relation(fields: [uploadedById], references: [id])
+
+  @@index([clientId])
+}
+
+// ─────────────────────────────────────────────
+// VIDEOS
+// ─────────────────────────────────────────────
+
+model Video {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  videoUrl       String
+  fileType       String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  createdBy    StaffMember?      @relation(fields: [createdById], references: [id])
+  assignments  VideoAssignment[]
+
+  @@index([organizationId])
+}
+
+model VideoAssignment {
+  id         String    @id @default(cuid())
+  videoId    String
+  clientId   String
+  assignedAt DateTime  @default(now())
+  viewedAt   DateTime?
+
+  video  Video  @relation(fields: [videoId], references: [id])
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([videoId])
 }
 
 // ─────────────────────────────────────────────
@@ -1104,8 +1424,45 @@ model Automation {
 }
 
 // ─────────────────────────────────────────────
+// REP MAXES
+// ─────────────────────────────────────────────
+
+model RepMax {
+  id           String   @id @default(cuid())
+  clientId     String
+  exerciseId   String
+  reps         Int
+  weight       Float    // lbs
+  recordedAt   DateTime @default(now())
+  recordedById String?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  exercise   Exercise    @relation(fields: [exerciseId], references: [id])
+  recordedBy StaffMember? @relation("RepMaxRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([clientId])
+  @@index([exerciseId])
+}
+
+// ─────────────────────────────────────────────
 // AUDIT LOG
 // ─────────────────────────────────────────────
+
+model ClientLifecycleEvent {
+  id         String   @id @default(cuid())
+  clientId   String
+  fromStage  String?  // null on initial assignment
+  toStage    String
+  source     String?  // e.g. "Default Lifecycle Stage", "Manual", automation name
+  createdAt  DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@index([clientId])
+  @@index([createdAt])
+}
 
 model AuditLog {
   id             String   @id @default(cuid())

@@ -1,7 +1,34 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, staffProcedure } from "../trpc";
+import { sendAppointmentConfirmation } from "@/lib/email";
 
 export const scheduleRouter = createTRPCRouter({
+  // ── Service Categories ────────────────
+  serviceCategories: createTRPCRouter({
+    list: staffProcedure.query(async ({ ctx }) => {
+      return ctx.db.serviceCategory.findMany({
+        where: { organizationId: ctx.organizationId },
+        orderBy: { sortOrder: "asc" },
+        include: { _count: { select: { services: true } } },
+      });
+    }),
+    create: staffProcedure
+      .input(z.object({ name: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.serviceCategory.create({
+          data: { name: input.name, organizationId: ctx.organizationId },
+        });
+      }),
+    delete: staffProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        return ctx.db.serviceCategory.delete({
+          where: { id: input.id, organizationId: ctx.organizationId },
+        });
+      }),
+  }),
+
   // ── Services ──────────────────────────
   services: createTRPCRouter({
     list: staffProcedure.query(async ({ ctx }) => {
@@ -24,6 +51,97 @@ export const scheduleRouter = createTRPCRouter({
       .mutation(async ({ ctx, input }) => {
         return ctx.db.service.create({
           data: { ...input, organizationId: ctx.organizationId },
+        });
+      }),
+  }),
+
+  // ── Client Packages ───────────────────
+  clientPackages: createTRPCRouter({
+    assign: staffProcedure
+      .input(z.object({
+        clientId: z.string(),
+        packageId: z.string(),
+        startDate: z.date().optional(),
+        sessionsOverride: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const pkg = await ctx.db.package.findFirstOrThrow({
+          where: { id: input.packageId, organizationId: ctx.organizationId },
+        });
+        return ctx.db.clientPackage.create({
+          data: {
+            clientId: input.clientId,
+            packageId: input.packageId,
+            startDate: input.startDate ?? new Date(),
+            sessionsRemaining: input.sessionsOverride ?? pkg.sessionCount ?? null,
+            sessionsUsed: 0,
+            status: "active",
+          },
+          include: { package: true },
+        });
+      }),
+
+    addSessions: staffProcedure
+      .input(z.object({
+        id: z.string(),
+        count: z.number().min(1).max(500),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // Verify client package belongs to this org via join
+        await ctx.db.clientPackage.findFirstOrThrow({
+          where: { id: input.id, client: { organizationId: ctx.organizationId } },
+        });
+        return ctx.db.clientPackage.update({
+          where: { id: input.id },
+          data: { sessionsRemaining: { increment: input.count } },
+        });
+      }),
+
+    cancel: staffProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        await ctx.db.clientPackage.findFirstOrThrow({
+          where: { id: input.id, client: { organizationId: ctx.organizationId } },
+        });
+        return ctx.db.clientPackage.update({
+          where: { id: input.id },
+          data: { status: "cancelled", endDate: new Date() },
+        });
+      }),
+
+    adjustExpiry: staffProcedure
+      .input(z.object({ id: z.string(), endDate: z.date() }))
+      .mutation(async ({ ctx, input }) => {
+        await ctx.db.clientPackage.findFirstOrThrow({
+          where: { id: input.id, client: { organizationId: ctx.organizationId } },
+        });
+        return ctx.db.clientPackage.update({
+          where: { id: input.id },
+          data: { endDate: input.endDate },
+        });
+      }),
+
+    pause: staffProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        await ctx.db.clientPackage.findFirstOrThrow({
+          where: { id: input.id, client: { organizationId: ctx.organizationId } },
+        });
+        return ctx.db.clientPackage.update({
+          where: { id: input.id },
+          data: { status: "paused" },
+        });
+      }),
+
+    resume: staffProcedure
+      .input(z.object({ id: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        await ctx.db.clientPackage.findFirstOrThrow({
+          where: { id: input.id, client: { organizationId: ctx.organizationId } },
+        });
+        return ctx.db.clientPackage.update({
+          where: { id: input.id },
+          data: { status: "active" },
         });
       }),
   }),
@@ -221,6 +339,28 @@ export const scheduleRouter = createTRPCRouter({
           });
         }
 
+        // Fire confirmation email (non-blocking)
+        ctx.db.client.findUnique({
+          where: { id: input.clientId },
+          select: { email: true, firstName: true, lastName: true },
+        }).then(async (client) => {
+          if (!client?.email) return;
+          const [staff, service, location] = await Promise.all([
+            ctx.db.staffMember.findUnique({ where: { id: input.staffId }, select: { firstName: true, lastName: true } }),
+            ctx.db.service.findUnique({ where: { id: input.serviceId }, select: { name: true } }),
+            input.locationId ? ctx.db.location.findUnique({ where: { id: input.locationId }, select: { name: true } }) : Promise.resolve(null),
+          ]);
+          if (!staff || !service) return;
+          await sendAppointmentConfirmation({
+            to: client.email,
+            clientName: `${client.firstName} ${client.lastName}`,
+            serviceName: service.name,
+            staffName: `${staff.firstName} ${staff.lastName}`,
+            scheduledAt: input.scheduledAt,
+            locationName: location?.name,
+          }).catch(() => {}); // silent fail
+        }).catch(() => {});
+
         return appt;
       }),
 
@@ -232,7 +372,8 @@ export const scheduleRouter = createTRPCRouter({
       }))
       .mutation(async ({ ctx, input }) => {
         const { id, status, cancelReason } = input;
-        return ctx.db.appointment.update({
+
+        const updated = await ctx.db.appointment.update({
           where: { id, organizationId: ctx.organizationId },
           data: {
             status: status as never,
@@ -241,6 +382,107 @@ export const scheduleRouter = createTRPCRouter({
               cancelReason,
             }),
           },
+          select: { id: true, clientId: true, clientPackageId: true },
+        });
+
+        // Session deduction on completion
+        if (status === "COMPLETED") {
+          const { clientId, clientPackageId } = updated;
+
+          if (clientPackageId) {
+            // Already linked — deduct from the linked package if it has sessions
+            const pkg = await ctx.db.clientPackage.findUnique({
+              where: { id: clientPackageId },
+              select: { id: true, sessionsRemaining: true },
+            });
+            if (pkg && pkg.sessionsRemaining !== null && pkg.sessionsRemaining > 0) {
+              await ctx.db.clientPackage.update({
+                where: { id: pkg.id },
+                data: { sessionsRemaining: { decrement: 1 }, sessionsUsed: { increment: 1 } },
+              });
+            }
+          } else {
+            // No package linked — find the client's oldest active package with sessions remaining
+            const activePkg = await ctx.db.clientPackage.findFirst({
+              where: { clientId, status: "active", sessionsRemaining: { gt: 0 } },
+              orderBy: { startDate: "asc" },
+              select: { id: true, sessionsRemaining: true },
+            });
+            if (activePkg) {
+              await ctx.db.clientPackage.update({
+                where: { id: activePkg.id },
+                data: { sessionsRemaining: { decrement: 1 }, sessionsUsed: { increment: 1 } },
+              });
+              // Link the appointment to the package
+              await ctx.db.appointment.update({
+                where: { id },
+                data: { clientPackageId: activePkg.id },
+              });
+            }
+          }
+        }
+
+        return updated;
+      }),
+
+    bulkUpdateStatus: staffProcedure
+      .input(z.object({
+        ids: z.array(z.string()).min(1),
+        status: z.enum(["RESERVED", "CONFIRMED", "COMPLETED", "CANCELLED", "EARLY_CANCEL", "NO_SHOW", "LATE_CANCEL"]),
+        cancelReason: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { ids, status, cancelReason } = input;
+        const isCancel = ["CANCELLED", "EARLY_CANCEL", "LATE_CANCEL"].includes(status);
+        return ctx.db.appointment.updateMany({
+          where: { id: { in: ids }, organizationId: ctx.organizationId },
+          data: {
+            status: status as never,
+            ...(isCancel && { cancelledAt: new Date(), cancelReason }),
+          },
+        });
+      }),
+
+    reschedule: staffProcedure
+      .input(z.object({
+        id: z.string(),
+        scheduledAt: z.date(),
+        endAt: z.date(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { id, scheduledAt, endAt } = input;
+
+        // Fetch the appointment to get staffId
+        const appt = await ctx.db.appointment.findFirstOrThrow({
+          where: { id, organizationId: ctx.organizationId },
+          select: { staffId: true },
+        });
+
+        // Double-booking guard: check for conflicting appointments for the same staff
+        const conflict = await ctx.db.appointment.findFirst({
+          where: {
+            id: { not: id },
+            organizationId: ctx.organizationId,
+            staffId: appt.staffId,
+            status: { in: ["RESERVED", "CONFIRMED"] },
+            AND: [
+              { scheduledAt: { lt: endAt } },
+              { endAt: { gt: scheduledAt } },
+            ],
+          },
+          select: { id: true, scheduledAt: true, endAt: true },
+        });
+
+        if (conflict) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `Staff already has an appointment from ${conflict.scheduledAt.toLocaleTimeString()} to ${conflict.endAt?.toLocaleTimeString()}`,
+          });
+        }
+
+        return ctx.db.appointment.update({
+          where: { id, organizationId: ctx.organizationId },
+          data: { scheduledAt, endAt },
         });
       }),
   }),

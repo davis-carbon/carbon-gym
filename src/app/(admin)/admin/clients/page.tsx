@@ -11,7 +11,7 @@ import { DropdownMenu, DropdownItem } from "@/components/ui/dropdown-menu";
 import { AddClientModal } from "@/components/admin/add-client-modal";
 import { trpc } from "@/trpc/client";
 import { useToast } from "@/components/ui/toast";
-import { Plus, Mail, Archive, Loader2 } from "lucide-react";
+import { Plus, Mail, Archive, Loader2, UserCheck, X } from "lucide-react";
 
 interface ClientRow {
   id: string;
@@ -126,19 +126,45 @@ function ClientActions({ clientId, clientName }: { clientId: string; clientName:
 
 export default function ClientsPage() {
   const router = useRouter();
+  const { toast } = useToast();
+  const utils = trpc.useUtils();
   const [showAddModal, setShowAddModal] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
   const [lifecycleFilter, setLifecycleFilter] = useState("");
   const [staffFilter, setStaffFilter] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [resetSignal, setResetSignal] = useState(0);
+  const [assignStaffId, setAssignStaffId] = useState("");
 
   const { data, isLoading, error } = trpc.clients.list.useQuery({
-    limit: 100,
+    limit: 1000,
     status: statusFilter || undefined,
     lifecycleStage: lifecycleFilter || undefined,
     assignedStaffId: staffFilter || undefined,
   } as any);
 
   const { data: staffList } = trpc.staff.list.useQuery();
+
+  const bulkArchive = trpc.clients.bulkArchive.useMutation({
+    onSuccess: (res) => {
+      toast("success", `${res.count} client${res.count === 1 ? "" : "s"} archived`);
+      utils.clients.list.invalidate();
+      setResetSignal((s) => s + 1);
+      setSelectedIds([]);
+    },
+    onError: (err) => toast("error", err.message),
+  });
+
+  const bulkAssign = trpc.clients.bulkAssignStaff.useMutation({
+    onSuccess: (res) => {
+      toast("success", `${res.count} client${res.count === 1 ? "" : "s"} reassigned`);
+      utils.clients.list.invalidate();
+      setResetSignal((s) => s + 1);
+      setSelectedIds([]);
+      setAssignStaffId("");
+    },
+    onError: (err) => toast("error", err.message),
+  });
 
   const clientRows: ClientRow[] = (data?.clients ?? []).map((c) => ({
     id: c.id,
@@ -155,6 +181,8 @@ export default function ClientsPage() {
       : null,
     profileImageUrl: c.profileImageUrl,
   }));
+
+  const hasSelection = selectedIds.length > 0;
 
   return (
     <div>
@@ -194,6 +222,52 @@ export default function ClientsPage() {
         )}
       </div>
 
+      {/* Bulk actions bar */}
+      {hasSelection && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-stone-300 bg-stone-900 px-4 py-2.5 text-white">
+          <div className="flex items-center gap-3 text-sm">
+            <button
+              onClick={() => { setResetSignal((s) => s + 1); setSelectedIds([]); }}
+              className="rounded p-1 hover:bg-stone-800"
+              aria-label="Clear selection"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <span className="font-medium">{selectedIds.length} selected</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={assignStaffId}
+              onChange={(e) => setAssignStaffId(e.target.value)}
+              className="rounded-lg border border-stone-600 bg-stone-800 px-2 py-1.5 text-xs text-white"
+            >
+              <option value="">Assign to...</option>
+              {(staffList ?? []).filter((s) => s.isActive).map((s) => (
+                <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => assignStaffId && bulkAssign.mutate({ ids: selectedIds, staffId: assignStaffId })}
+              disabled={!assignStaffId || bulkAssign.isPending}
+            >
+              <UserCheck className="h-4 w-4" />
+              {bulkAssign.isPending ? "Assigning..." : "Reassign"}
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              onClick={() => { if (confirm(`Archive ${selectedIds.length} client${selectedIds.length === 1 ? "" : "s"}?`)) bulkArchive.mutate({ ids: selectedIds }); }}
+              disabled={bulkArchive.isPending}
+            >
+              <Archive className="h-4 w-4" />
+              {bulkArchive.isPending ? "Archiving..." : "Archive"}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-xl border border-stone-200 bg-white p-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
@@ -210,6 +284,10 @@ export default function ClientsPage() {
             columns={columns}
             searchPlaceholder="Search clients..."
             onRowClick={(row) => router.push(`/admin/clients/${row.id}`)}
+            enableRowSelection
+            getRowId={(row) => row.id}
+            onSelectionChange={setSelectedIds}
+            resetSelectionSignal={resetSignal}
           />
         )}
       </div>

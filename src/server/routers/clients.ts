@@ -9,7 +9,7 @@ export const clientsRouter = createTRPCRouter({
         status: z.enum(["ACTIVE", "INACTIVE", "PENDING_CANCELLATION", "SUSPENDED"]).optional(),
         lifecycleStage: z.enum(["LEAD", "PROSPECT", "CLIENT", "FORMER_CLIENT"]).optional(),
         assignedStaffId: z.string().optional(),
-        limit: z.number().min(1).max(100).default(50),
+        limit: z.number().min(1).max(1000).default(50),
         cursor: z.string().optional(),
       }).optional()
     )
@@ -120,6 +120,17 @@ export const clientsRouter = createTRPCRouter({
         assignedStaffId: z.string().nullish(),
         customStatus: z.string().nullish(),
         profileImageUrl: z.string().nullish(),
+        address: z.string().nullish(),
+        city: z.string().nullish(),
+        state: z.string().nullish(),
+        zip: z.string().nullish(),
+        country: z.string().nullish(),
+        billingAddress: z.string().nullish(),
+        billingCity: z.string().nullish(),
+        billingState: z.string().nullish(),
+        billingZip: z.string().nullish(),
+        billingCountry: z.string().nullish(),
+        appPlatform: z.string().nullish(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -155,5 +166,32 @@ export const clientsRouter = createTRPCRouter({
         where: { id: { in: input.ids }, organizationId: ctx.organizationId },
         data: { assignedStaffId: input.staffId },
       });
+    }),
+
+  listVisits: staffProcedure
+    .input(z.object({
+      clientId: z.string(),
+      limit: z.number().min(1).max(100).default(20),
+      cursor: z.string().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const { clientId, limit, cursor } = input;
+      const visits = await ctx.db.appointment.findMany({
+        where: { clientId, organizationId: ctx.organizationId },
+        take: limit + 1,
+        ...(cursor && { cursor: { id: cursor }, skip: 1 }),
+        orderBy: { scheduledAt: "desc" },
+        include: {
+          service: { select: { name: true } },
+          staff: { select: { firstName: true, lastName: true } },
+          location: { select: { name: true } },
+        },
+      });
+
+      let nextCursor: string | undefined;
+      if (visits.length > limit) {
+        nextCursor = visits.pop()?.id;
+      }
+      return { visits, nextCursor };
     }),
 });

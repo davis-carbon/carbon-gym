@@ -14,11 +14,17 @@ import {
   Zap,
   Settings,
   BarChart3,
+  FileText,
+  FolderOpen,
   Menu,
   X,
+  ScrollText,
+  Video,
+  CreditCard,
 } from "lucide-react";
 import { GlobalSearch } from "./global-search";
 import { NotificationBell } from "./notification-bell";
+import { AdminMessagesBadge } from "./messages-badge";
 
 const navigation = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
@@ -27,9 +33,14 @@ const navigation = [
   { name: "Exercises", href: "/admin/exercises", icon: Dumbbell },
   { name: "Plans", href: "/admin/plans", icon: ClipboardList },
   { name: "Groups", href: "/admin/groups", icon: UsersRound },
+  { name: "Payments", href: "/admin/payments", icon: CreditCard },
+  { name: "Assessments", href: "/admin/assessments", icon: FileText },
+  { name: "Resources", href: "/admin/resources", icon: FolderOpen },
+  { name: "Videos", href: "/admin/videos", icon: Video },
   { name: "Messages", href: "/admin/messages", icon: MessageSquare },
   { name: "Automations", href: "/admin/automations", icon: Zap },
   { name: "Reports", href: "/admin/reports", icon: BarChart3 },
+  { name: "Audit Log", href: "/admin/audit-log", icon: ScrollText },
   { name: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
@@ -88,6 +99,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 >
                   <item.icon className="h-5 w-5 flex-shrink-0" />
                   {item.name}
+                  {item.name === "Messages" && <AdminMessagesBadge />}
                 </Link>
               );
             })}

@@ -21,7 +21,8 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#1C1917" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Carbon TC" />
       </head>
       <body className={`${inter.className} antialiased bg-[var(--color-app-bg)] text-[var(--color-text-primary)]`}>
         <Providers>{children}</Providers>

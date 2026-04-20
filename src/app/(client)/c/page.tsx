@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/trpc/client";
-import { Calendar, Dumbbell, MessageSquare, TrendingUp, Loader2 } from "lucide-react";
+import { Calendar, Dumbbell, MessageSquare, TrendingUp, Loader2, ClipboardList, FileText, ChevronRight, Utensils, FolderOpen } from "lucide-react";
 
 export default function ClientHomePage() {
   const { data: me } = trpc.portal.me.useQuery();
@@ -83,6 +84,84 @@ export default function ClientHomePage() {
             <p className="text-xs text-stone-500">Sessions left</p>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Assessments to complete */}
+      {stats?.pendingAssessments && stats.pendingAssessments > 0 ? (
+        <Link href="/c/assessments" className="block">
+          <Card className="hover:border-stone-300 transition-colors">
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-blue-50 p-2">
+                  <ClipboardList className="h-5 w-5 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-sm text-stone-900">
+                    {stats.pendingAssessments} assessment{stats.pendingAssessments > 1 ? "s" : ""} to complete
+                  </p>
+                  <p className="text-xs text-stone-500">Help us tailor your training</p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-stone-400" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      ) : null}
+
+      {/* New resources */}
+      {stats?.unviewedResources && stats.unviewedResources > 0 ? (
+        <Link href="/c/resources" className="block">
+          <Card className="hover:border-stone-300 transition-colors">
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-emerald-50 p-2">
+                  <FileText className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-sm text-stone-900">
+                    {stats.unviewedResources} new resource{stats.unviewedResources > 1 ? "s" : ""}
+                  </p>
+                  <p className="text-xs text-stone-500">From your trainer</p>
+                </div>
+                <ChevronRight className="h-4 w-4 text-stone-400" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      ) : null}
+
+      {/* Nutrition quick-link */}
+      <Link href="/c/nutrition" className="block">
+        <Card className="hover:border-stone-300 transition-colors">
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-lg bg-orange-50 p-2">
+                <Utensils className="h-5 w-5 text-orange-600" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm text-stone-900">Log your meals</p>
+                <p className="text-xs text-stone-500">Track calories and macros</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-stone-400" />
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+
+      {/* Quick links */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Nutrition", href: "/c/nutrition", icon: Utensils, color: "bg-green-50 text-green-600" },
+          { label: "Assessments", href: "/c/assessments", icon: ClipboardList, color: "bg-blue-50 text-blue-600" },
+          { label: "Resources", href: "/c/resources", icon: FolderOpen, color: "bg-purple-50 text-purple-600" },
+        ].map(({ label, href, icon: Icon, color }) => (
+          <Link key={href} href={href} className="flex flex-col items-center gap-1.5 rounded-xl border border-stone-200 bg-white py-4 text-center hover:border-stone-400 transition-colors">
+            <div className={`rounded-lg p-2 ${color}`}>
+              <Icon className="h-4 w-4" />
+            </div>
+            <span className="text-xs font-medium text-stone-700">{label}</span>
+          </Link>
+        ))}
       </div>
 
       {/* Unread messages */}

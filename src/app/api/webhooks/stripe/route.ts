@@ -3,6 +3,8 @@ import Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
 import { db } from "@/server/db";
 import { sendPaymentFailedEmail } from "@/lib/email";
+import { sendPushToClient } from "@/lib/push";
+import { firePostPurchaseTrigger } from "@/lib/automation-engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,11 +27,12 @@ export async function POST(req: NextRequest) {
     } else {
       // Fallback for dev — parse without verification (NOT safe for production)
       console.warn("[stripe-webhook] STRIPE_WEBHOOK_SECRET not set — signature NOT verified");
-      event = JSON.parse(body);
+      event = JSON.parse(body) as Stripe.Event;
     }
-  } catch (err: any) {
-    console.error("[stripe-webhook] Signature verification failed:", err.message);
-    return NextResponse.json({ error: `Webhook signature invalid: ${err.message}` }, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[stripe-webhook] Signature verification failed:", message);
+    return NextResponse.json({ error: `Webhook signature invalid: ${message}` }, { status: 400 });
   }
 
   try {
@@ -40,15 +43,27 @@ export async function POST(req: NextRequest) {
         break;
       }
 
+      case "payment_intent.succeeded": {
+        const intent = event.data.object as Stripe.PaymentIntent;
+        await handlePaymentIntentSucceeded(intent);
+        break;
+      }
+
+      case "payment_intent.payment_failed": {
+        const intent = event.data.object as Stripe.PaymentIntent;
+        await handlePaymentIntentFailed(intent);
+        break;
+      }
+
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
-        await handlePaymentSucceeded(invoice);
+        await handleInvoicePaymentSucceeded(invoice);
         break;
       }
 
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
-        await handlePaymentFailed(invoice);
+        await handleInvoicePaymentFailed(invoice);
         break;
       }
 
@@ -75,11 +90,14 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ received: true });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error("[stripe-webhook] Handler failed:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+// ─── Handlers ────────────────────────────────────────────────────────────────
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const clientId = session.metadata?.clientId;
@@ -94,7 +112,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   if (!pkg) return;
 
   // Create ClientPackage
-  await db.clientPackage.create({
+  const clientPackage = await db.clientPackage.create({
     data: {
       clientId,
       packageId,
@@ -111,11 +129,13 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   await db.payment.create({
     data: {
       clientId,
+      clientPackageId: clientPackage.id,
       amount: (session.amount_total ?? 0) / 100,
       currency: session.currency ?? "usd",
       status: "SUCCEEDED",
       stripePaymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : null,
-      description: pkg.name,
+      description: `${pkg.name} — checkout`,
+      invoiceNumber: generateInvoiceNumber(),
       paidAt: new Date(),
     },
   });
@@ -127,24 +147,94 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       billingStatus: pkg.billingCycle === "ONE_TIME" ? "PAID" : "BILLED",
     },
   });
+
+  // Fire day-0 post-purchase automations (fire-and-forget)
+  const clientRecord = await db.client.findUnique({
+    where: { id: clientId },
+    select: { organizationId: true },
+  });
+  if (clientRecord) {
+    firePostPurchaseTrigger(clientId, clientRecord.organizationId).catch(() => {});
+  }
 }
 
-async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
+async function handlePaymentIntentSucceeded(intent: Stripe.PaymentIntent) {
+  // Update any existing pending Payment record that was created for this intent
+  const existing = await db.payment.findFirst({
+    where: { stripePaymentIntentId: intent.id },
+  });
+
+  if (existing && existing.status === "PENDING") {
+    await db.payment.update({
+      where: { id: existing.id },
+      data: { status: "SUCCEEDED", paidAt: new Date() },
+    });
+  }
+}
+
+async function handlePaymentIntentFailed(intent: Stripe.PaymentIntent) {
+  const existing = await db.payment.findFirst({
+    where: { stripePaymentIntentId: intent.id },
+  });
+
+  if (existing) {
+    await db.payment.update({
+      where: { id: existing.id },
+      data: {
+        status: "FAILED",
+        failureReason: intent.last_payment_error?.message ?? "Payment failed",
+      },
+    });
+  }
+
+  // Update client billing status and send push notification
+  const clientId = intent.metadata?.clientId;
+  if (clientId) {
+    await db.client.update({
+      where: { id: clientId },
+      data: { billingStatus: "PAST_DUE" },
+    });
+
+    await sendPushToClient(clientId, {
+      title: "Payment Failed",
+      body: "Your recent payment didn't go through. Please update your payment method.",
+      url: "/c/payments",
+    }).catch(() => {});
+  }
+}
+
+async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
   const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
   if (!customerId) return;
 
   const client = await db.client.findFirst({ where: { stripeCustomerId: customerId } });
   if (!client) return;
 
+  // Find the ClientPackage linked to this subscription (for renewal tracking)
+  const subscriptionId = typeof invoice.subscription === "string"
+    ? invoice.subscription
+    : (invoice.subscription as { id?: string } | null)?.id;
+
+  const clientPackage = subscriptionId
+    ? await db.clientPackage.findFirst({
+        where: { stripeSubscriptionId: subscriptionId },
+        include: { package: true },
+      })
+    : null;
+
   await db.payment.create({
     data: {
       clientId: client.id,
+      clientPackageId: clientPackage?.id ?? null,
       amount: (invoice.amount_paid ?? 0) / 100,
       currency: invoice.currency ?? "usd",
       status: "SUCCEEDED",
       stripeInvoiceId: invoice.id,
-      description: invoice.description || "Subscription payment",
-      paidAt: new Date((invoice.status_transitions?.paid_at ?? 0) * 1000) || new Date(),
+      description: clientPackage ? `${clientPackage.package.name} — renewal` : (invoice.description ?? "Subscription payment"),
+      invoiceNumber: generateInvoiceNumber(),
+      paidAt: invoice.status_transitions?.paid_at
+        ? new Date(invoice.status_transitions.paid_at * 1000)
+        : new Date(),
     },
   });
 
@@ -152,23 +242,43 @@ async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
     where: { id: client.id },
     data: { billingStatus: "PAID" },
   });
+
+  // Reset sessions on subscription renewal if it's a session pack
+  if (clientPackage?.package.sessionCount) {
+    await db.clientPackage.update({
+      where: { id: clientPackage.id },
+      data: {
+        sessionsUsed: 0,
+        sessionsRemaining: clientPackage.package.sessionCount,
+      },
+    });
+  }
 }
 
-async function handlePaymentFailed(invoice: Stripe.Invoice) {
+async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
   if (!customerId) return;
 
   const client = await db.client.findFirst({ where: { stripeCustomerId: customerId } });
   if (!client) return;
 
+  const subscriptionId = typeof invoice.subscription === "string"
+    ? invoice.subscription
+    : (invoice.subscription as { id?: string } | null)?.id;
+
+  const clientPackage = subscriptionId
+    ? await db.clientPackage.findFirst({ where: { stripeSubscriptionId: subscriptionId } })
+    : null;
+
   await db.payment.create({
     data: {
       clientId: client.id,
+      clientPackageId: clientPackage?.id ?? null,
       amount: (invoice.amount_due ?? 0) / 100,
       currency: invoice.currency ?? "usd",
       status: "FAILED",
       stripeInvoiceId: invoice.id,
-      description: invoice.description || "Subscription payment",
+      description: invoice.description ?? "Subscription renewal — payment failed",
       failureReason: invoice.last_finalization_error?.message ?? "Payment failed",
     },
   });
@@ -178,6 +288,7 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
     data: { billingStatus: "PAST_DUE" },
   });
 
+  // Email notification
   if (client.email) {
     await sendPaymentFailedEmail({
       to: client.email,
@@ -185,6 +296,13 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
       amount: (invoice.amount_due ?? 0) / 100,
     });
   }
+
+  // Push notification
+  await sendPushToClient(client.id, {
+    title: "Payment Failed",
+    body: "Your subscription payment didn't go through. Please update your payment method.",
+    url: "/c/payments",
+  }).catch(() => {});
 }
 
 async function handleSubscriptionUpdated(sub: Stripe.Subscription) {
@@ -192,14 +310,11 @@ async function handleSubscriptionUpdated(sub: Stripe.Subscription) {
   const client = await db.client.findFirst({ where: { stripeCustomerId: customerId } });
   if (!client) return;
 
-  // Find the ClientPackage linked to this subscription
   const clientPackage = await db.clientPackage.findFirst({
     where: { stripeSubscriptionId: sub.id },
   });
-
   if (!clientPackage) return;
 
-  // Update status based on subscription status
   const status = sub.status === "active" || sub.status === "trialing"
     ? "active"
     : sub.status === "canceled"
@@ -222,10 +337,18 @@ async function handleSubscriptionCancelled(sub: Stripe.Subscription) {
     where: { id: clientPackage.id },
     data: { status: "cancelled", cancelledAt: new Date() },
   });
+
+  // Move client to former client lifecycle stage
+  await db.client.update({
+    where: { id: clientPackage.clientId },
+    data: { lifecycleStage: "FORMER_CLIENT" },
+  });
 }
 
 async function handleRefund(charge: Stripe.Charge) {
-  const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+  const paymentIntentId = typeof charge.payment_intent === "string"
+    ? charge.payment_intent
+    : (charge.payment_intent as { id?: string } | null)?.id;
   if (!paymentIntentId) return;
 
   const payment = await db.payment.findFirst({
@@ -240,4 +363,13 @@ async function handleRefund(charge: Stripe.Charge) {
       refundedAmount: charge.amount_refunded / 100,
     },
   });
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function generateInvoiceNumber(): string {
+  const now = new Date();
+  const prefix = `CTC-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const suffix = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
+  return `${prefix}-${suffix}`;
 }

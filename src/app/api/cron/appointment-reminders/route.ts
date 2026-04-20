@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     where: {
       scheduledAt: { gte: windowStart, lte: windowEnd },
       status: { in: ["RESERVED", "CONFIRMED"] },
+      reminderSentAt: null,
     },
     include: {
       client: { select: { firstName: true, email: true } },
@@ -44,6 +45,10 @@ export async function GET(req: NextRequest) {
       staffName: `${appt.staff.firstName} ${appt.staff.lastName}`,
       scheduledAt: appt.scheduledAt,
     });
+
+    if (res.sent) {
+      await db.appointment.update({ where: { id: appt.id }, data: { reminderSentAt: new Date() } });
+    }
 
     results.push({ id: appt.id, sent: res.sent, error: res.error });
   }

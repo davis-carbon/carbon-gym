@@ -193,6 +193,249 @@ export const billingRouter = createTRPCRouter({
       return { priceId };
     }),
 
+  /** Staff: List Stripe payment methods for a client */
+  listPaymentMethods: staffProcedure
+    .input(z.object({ clientId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const client = await ctx.db.client.findFirstOrThrow({
+        where: { id: input.clientId, organizationId: ctx.organizationId },
+        select: { stripeCustomerId: true },
+      });
+      if (!stripe || !client.stripeCustomerId) return [];
+      const methods = await stripe.paymentMethods.list({
+        customer: client.stripeCustomerId,
+        type: "card",
+      });
+      const customer = await stripe.customers.retrieve(client.stripeCustomerId) as any;
+      const defaultMethodId = customer.invoice_settings?.default_payment_method;
+      return methods.data.map((m) => ({
+        id: m.id,
+        brand: m.card?.brand ?? "card",
+        last4: m.card?.last4 ?? "????",
+        expMonth: m.card?.exp_month,
+        expYear: m.card?.exp_year,
+        created: m.created,
+        isDefault: m.id === defaultMethodId,
+      }));
+    }),
+
+  /** Staff: Remove a Stripe payment method */
+  removePaymentMethod: staffProcedure
+    .input(z.object({ paymentMethodId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!stripe) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Stripe not configured" });
+      await stripe.paymentMethods.detach(input.paymentMethodId);
+      return { success: true };
+    }),
+
+  /** Staff: Adjust account balance */
+  adjustAccountBalance: staffProcedure
+    .input(z.object({
+      clientId: z.string(),
+      amount: z.number(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const last = await ctx.db.accountBalanceTransaction.findFirst({
+        where: { clientId: input.clientId, organizationId: ctx.organizationId },
+        orderBy: { createdAt: "desc" },
+      });
+      const runningBalance = (last?.runningBalance ?? 0) + input.amount;
+      return ctx.db.accountBalanceTransaction.create({
+        data: {
+          clientId: input.clientId,
+          organizationId: ctx.organizationId,
+          amount: input.amount,
+          description: input.description,
+          runningBalance,
+        },
+      });
+    }),
+
+  /** Staff: List account balance transactions */
+  listAccountBalance: staffProcedure
+    .input(z.object({ clientId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.accountBalanceTransaction.findMany({
+        where: { clientId: input.clientId, organizationId: ctx.organizationId },
+        orderBy: { createdAt: "desc" },
+      });
+    }),
+
+  /** Staff: Adjust service balance */
+  adjustServiceBalance: staffProcedure
+    .input(z.object({
+      clientId: z.string(),
+      amount: z.number(),
+      description: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const last = await ctx.db.serviceBalanceTransaction.findFirst({
+        where: { clientId: input.clientId, organizationId: ctx.organizationId },
+        orderBy: { createdAt: "desc" },
+      });
+      const startingBalance = last?.endingBalance ?? 0;
+      const endingBalance = startingBalance + input.amount;
+      return ctx.db.serviceBalanceTransaction.create({
+        data: {
+          clientId: input.clientId,
+          organizationId: ctx.organizationId,
+          amount: input.amount,
+          description: input.description,
+          startingBalance,
+          endingBalance,
+        },
+      });
+    }),
+
+  /** Staff: List service balance transactions */
+  listServiceBalance: staffProcedure
+    .input(z.object({ clientId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.serviceBalanceTransaction.findMany({
+        where: { clientId: input.clientId, organizationId: ctx.organizationId },
+        orderBy: { createdAt: "desc" },
+      });
+    }),
+
+  /** Staff: Set default payment method for a customer */
+  setDefaultPaymentMethod: staffProcedure
+    .input(z.object({ clientId: z.string(), paymentMethodId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!stripe) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Stripe not configured" });
+
+      const client = await ctx.db.client.findFirstOrThrow({
+        where: { id: input.clientId, organizationId: ctx.organizationId },
+        select: { stripeCustomerId: true },
+      });
+
+      if (!client.stripeCustomerId) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Client has no Stripe customer" });
+      }
+
+      await stripe.customers.update(client.stripeCustomerId, {
+        invoice_settings: { default_payment_method: input.paymentMethodId },
+      });
+
+      return { success: true };
+    }),
+
+  /** Staff: Generate a checkout link and return the URL without opening it */
+  createCheckoutLink: staffProcedure
+    .input(z.object({ clientId: z.string(), packageId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!stripe) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Stripe not configured" });
+
+      const client = await ctx.db.client.findFirstOrThrow({
+        where: { id: input.clientId, organizationId: ctx.organizationId },
+      });
+
+      const pkg = await ctx.db.package.findFirstOrThrow({
+        where: { id: input.packageId, organizationId: ctx.organizationId },
+      });
+
+      const customerId = await getOrCreateStripeCustomer({
+        clientId: client.id,
+        email: client.email,
+        name: `${client.firstName} ${client.lastName}`,
+        existingCustomerId: client.stripeCustomerId,
+      });
+
+      if (!client.stripeCustomerId) {
+        await ctx.db.client.update({ where: { id: client.id }, data: { stripeCustomerId: customerId } });
+      }
+
+      const priceId = await syncPackageToStripe({
+        id: pkg.id,
+        name: pkg.name,
+        description: pkg.description,
+        price: pkg.price,
+        packageType: pkg.packageType,
+        billingCycle: pkg.billingCycle,
+        existingStripePriceId: pkg.stripePriceId,
+      });
+
+      if (!pkg.stripePriceId) {
+        await ctx.db.package.update({ where: { id: pkg.id }, data: { stripePriceId: priceId } });
+      }
+
+      const mode = pkg.billingCycle === "ONE_TIME" ? "payment" : "subscription";
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://carbon-gym-three.vercel.app";
+
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        mode,
+        line_items: [{ price: priceId, quantity: 1 }],
+        success_url: `${baseUrl}/admin/clients/${client.id}?checkout=success`,
+        cancel_url: `${baseUrl}/admin/clients/${client.id}?checkout=cancelled`,
+        metadata: { clientId: client.id, packageId: pkg.id },
+      });
+
+      return { url: session.url };
+    }),
+
+  /** Staff: Org-wide payment list */
+  listOrgPayments: staffProcedure
+    .input(z.object({
+      status: z.string().optional(),
+      search: z.string().optional(),
+      take: z.number().default(200),
+    }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.payment.findMany({
+        where: {
+          client: { organizationId: ctx.organizationId },
+          ...(input.status ? { status: input.status as never } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: input.take,
+        include: {
+          client: { select: { id: true, firstName: true, lastName: true, profileImageUrl: true } },
+          clientPackage: { include: { package: { select: { name: true } } } },
+        },
+      });
+    }),
+
+  /** Staff: Org-wide subscription list */
+  listOrgSubscriptions: staffProcedure
+    .input(z.object({ status: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.clientPackage.findMany({
+        where: {
+          client: { organizationId: ctx.organizationId },
+          ...(input.status ? { status: input.status as never } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        include: {
+          client: { select: { id: true, firstName: true, lastName: true, profileImageUrl: true } },
+          package: { select: { id: true, name: true, price: true, billingCycle: true } },
+        },
+      });
+    }),
+
+  /** Staff: Org-wide account balance summary */
+  listOrgAccountBalances: staffProcedure.query(async ({ ctx }) => {
+    // Get latest running balance per client
+    const balances = await ctx.db.accountBalanceTransaction.findMany({
+      where: { organizationId: ctx.organizationId },
+      orderBy: { createdAt: "desc" },
+      distinct: ["clientId"],
+      include: { client: { select: { id: true, firstName: true, lastName: true } } },
+    });
+    return balances.filter((b) => b.runningBalance !== 0);
+  }),
+
+  /** Staff: Org-wide service balance summary */
+  listOrgServiceBalances: staffProcedure.query(async ({ ctx }) => {
+    const balances = await ctx.db.serviceBalanceTransaction.findMany({
+      where: { organizationId: ctx.organizationId },
+      orderBy: { createdAt: "desc" },
+      distinct: ["clientId"],
+      include: { client: { select: { id: true, firstName: true, lastName: true } } },
+    });
+    return balances.filter((b) => b.endingBalance !== 0);
+  }),
+
   /** Check if Stripe is enabled */
   status: staffProcedure.query(() => ({ enabled: stripeEnabled })),
 });

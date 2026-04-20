@@ -8,19 +8,53 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { trpc } from "@/trpc/client";
 import { useToast } from "@/components/ui/toast";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, Trash2 } from "lucide-react";
 
 export default function ServicesPage() {
   const { toast } = useToast();
   const utils = trpc.useUtils();
+
+  // ── Services ──────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "APPOINTMENT", durationMinutes: "60" });
+  const [form, setForm] = useState({ name: "", type: "APPOINTMENT", durationMinutes: "60", categoryId: "" });
   const { data: services, isLoading } = trpc.schedule.services.list.useQuery();
 
   const createService = trpc.schedule.services.create.useMutation({
-    onSuccess: () => { toast("success", "Service created"); utils.schedule.services.list.invalidate(); setShowCreate(false); setForm({ name: "", type: "APPOINTMENT", durationMinutes: "60" }); },
+    onSuccess: () => {
+      toast("success", "Service created");
+      utils.schedule.services.list.invalidate();
+      setShowCreate(false);
+      setForm({ name: "", type: "APPOINTMENT", durationMinutes: "60", categoryId: "" });
+    },
     onError: (err) => toast("error", err.message),
   });
+
+  // ── Categories ────────────────────────────────────────────────
+  const [showCategories, setShowCategories] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const { data: categories = [] } = trpc.schedule.serviceCategories.list.useQuery();
+
+  const createCategory = trpc.schedule.serviceCategories.create.useMutation({
+    onSuccess: () => {
+      toast("success", "Category created");
+      utils.schedule.serviceCategories.list.invalidate();
+      setNewCatName("");
+    },
+    onError: (err) => toast("error", err.message),
+  });
+
+  const deleteCategory = trpc.schedule.serviceCategories.delete.useMutation({
+    onSuccess: () => {
+      toast("success", "Category deleted");
+      utils.schedule.serviceCategories.list.invalidate();
+    },
+    onError: (err) => toast("error", err.message),
+  });
+
+  const categoryOptions = [
+    { value: "", label: "No category" },
+    ...categories.map((c) => ({ value: c.id, label: c.name })),
+  ];
 
   return (
     <div>
@@ -28,7 +62,7 @@ export default function ServicesPage() {
         <div />
         <div className="flex gap-2">
           <Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4" /> New Service</Button>
-          <Button variant="secondary" size="sm">Manage Categories</Button>
+          <Button variant="secondary" size="sm" onClick={() => setShowCategories(true)}>Manage Categories</Button>
         </div>
       </div>
       <div className="rounded-xl border border-stone-200 bg-white overflow-hidden">
@@ -62,10 +96,19 @@ export default function ServicesPage() {
         </table>
       </div>
 
+      {/* New Service Modal */}
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="New Service" footer={
         <>
           <Button variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
-          <Button onClick={() => createService.mutate({ name: form.name, type: form.type as "APPOINTMENT" | "CLASS", durationMinutes: parseInt(form.durationMinutes) || 60 })} disabled={!form.name || createService.isPending}>
+          <Button
+            onClick={() => createService.mutate({
+              name: form.name,
+              type: form.type as "APPOINTMENT" | "CLASS",
+              durationMinutes: parseInt(form.durationMinutes) || 60,
+              ...(form.categoryId && { categoryId: form.categoryId }),
+            })}
+            disabled={!form.name || createService.isPending}
+          >
             {createService.isPending ? "Creating..." : "Create Service"}
           </Button>
         </>
@@ -75,6 +118,63 @@ export default function ServicesPage() {
           <div className="grid grid-cols-2 gap-4">
             <Select label="Type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} options={[{ value: "APPOINTMENT", label: "Appointment" }, { value: "CLASS", label: "Class" }]} />
             <Input label="Duration (min)" type="number" value={form.durationMinutes} onChange={(e) => setForm({ ...form, durationMinutes: e.target.value })} />
+          </div>
+          <Select label="Category (optional)" value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} options={categoryOptions} />
+        </div>
+      </Modal>
+
+      {/* Manage Categories Modal */}
+      <Modal open={showCategories} onClose={() => setShowCategories(false)} title="Manage Categories" footer={
+        <Button variant="secondary" onClick={() => setShowCategories(false)}>Done</Button>
+      }>
+        <div className="space-y-4">
+          {/* Existing categories */}
+          {categories.length === 0 ? (
+            <p className="text-sm text-stone-400 text-center py-2">No categories yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {categories.map((cat) => (
+                <div key={cat.id} className="flex items-center justify-between rounded-lg border border-stone-200 px-3 py-2">
+                  <div>
+                    <span className="text-sm font-medium">{cat.name}</span>
+                    <span className="text-xs text-stone-400 ml-2">{cat._count.services} service{cat._count.services !== 1 ? "s" : ""}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (cat._count.services > 0) {
+                        toast("error", `Remove all services from "${cat.name}" first`);
+                        return;
+                      }
+                      deleteCategory.mutate({ id: cat.id });
+                    }}
+                    disabled={deleteCategory.isPending}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-stone-400" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add new category */}
+          <div className="border-t border-stone-100 pt-3">
+            <p className="text-xs font-medium text-stone-600 mb-2">Add Category</p>
+            <div className="flex gap-2">
+              <Input
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                placeholder="Category name"
+                onKeyDown={(e) => { if (e.key === "Enter" && newCatName.trim()) createCategory.mutate({ name: newCatName.trim() }); }}
+              />
+              <Button
+                onClick={() => createCategory.mutate({ name: newCatName.trim() })}
+                disabled={!newCatName.trim() || createCategory.isPending}
+              >
+                {createCategory.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
         </div>
       </Modal>
