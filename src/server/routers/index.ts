@@ -22,6 +22,10 @@ import { progressPhotosRouter } from "./progressPhotos";
 import { nutritionRouter } from "./nutrition";
 import { auditLogRouter } from "./auditLog";
 import { lifecycleRouter } from "./lifecycle";
+import { orgRouter } from "./org";
+import { timeCardRouter } from "./timeCard";
+import { orgLinksRouter } from "./orgLinks";
+import { emailTemplatesRouter } from "./emailTemplates";
 
 export const appRouter = createTRPCRouter({
   clients: clientsRouter,
@@ -47,6 +51,10 @@ export const appRouter = createTRPCRouter({
   nutrition: nutritionRouter,
   auditLog: auditLogRouter,
   lifecycle: lifecycleRouter,
+  org: orgRouter,
+  timeCard: timeCardRouter,
+  orgLinks: orgLinksRouter,
+  emailTemplates: emailTemplatesRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -211,6 +211,68 @@ model Organization {
   accountBalanceTransactions AccountBalanceTransaction[]
   serviceBalanceTransactions ServiceBalanceTransaction[]
   clientNoteFields   ClientNoteField[]
+  timeEntries        StaffTimeEntry[]
+  orgLinks           OrgLink[]
+  emailTemplates     EmailTemplate[]
+}
+
+// ─────────────────────────────────────────────
+// TIME CARD
+// ─────────────────────────────────────────────
+
+model StaffTimeEntry {
+  id             String      @id @default(cuid())
+  organizationId String
+  staffId        String
+  clockedIn      DateTime
+  clockedOut     DateTime?
+  note           String?
+  createdAt      DateTime    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  staff        StaffMember  @relation(fields: [staffId], references: [id])
+
+  @@index([organizationId])
+  @@index([staffId])
+}
+
+// ─────────────────────────────────────────────
+// ORG LINKS
+// ─────────────────────────────────────────────
+
+model OrgLink {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  url            String
+  type           String   @default("custom")  // "booking", "affiliate", "custom"
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+}
+
+// ─────────────────────────────────────────────
+// EMAIL TEMPLATES
+// ─────────────────────────────────────────────
+
+model EmailTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  subject        String
+  body           String
+  trigger        String?  // "welcome", "appointment_reminder", "payment_receipt", "custom"
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
 }
 
 // ─────────────────────────────────────────────
@@ -239,6 +301,7 @@ model StaffMember {
   updatedAt       DateTime @updatedAt
 
   organization        Organization          @relation(fields: [organizationId], references: [id])
+  timeEntries         StaffTimeEntry[]
   assignedClients     Client[]
   createdExercises    Exercise[]
   createdPlans        WorkoutPlan[]
